@@ -33,3 +33,7 @@ go.work.sum
 
 # Goreleaser output
 dist/
+
+# Created by `npm install --no-save` in the release CI job — must be gitignored
+# or goreleaser's dirty-state check refuses to run.
+node_modules/
