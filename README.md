@@ -75,8 +75,13 @@ If your sandbox needs custom tooling, add `[sandbox.docker]` to `.sbxgo/config.t
 **Build from a Dockerfile in your repo:**
 
 ```toml
+[sandbox]
+agent = "claude"
+
 [sandbox.docker.build]
-# context defaults to ".", dockerfile defaults to ".sbxgo/Dockerfile"
+# Both fields are optional and shown here with their defaults.
+context    = "."
+dockerfile = ".sbxgo/Dockerfile"
 ```
 
 ```dockerfile
@@ -93,6 +98,9 @@ USER agent
 **Or pull a pre-published image:**
 
 ```toml
+[sandbox]
+agent = "claude"
+
 [sandbox.docker]
 image = "ghcr.io/acme/dev:1.4.0"
 ```
