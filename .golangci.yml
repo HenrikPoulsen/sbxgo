@@ -1,0 +1,64 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - goimports
+
+linters:
+  default: all
+  disable:
+    # Deprecated (replaced by newer versions)
+    - gomodguard   # replaced by gomodguard_v2
+    - wsl          # replaced by wsl_v5
+
+    # Redundant with cyclop (both measure cyclomatic complexity)
+    - gocognit
+    - gocyclo
+
+    # Default-deny: fire on every import / forbidden identifier without a project-specific allow list
+    - depguard
+    - forbidigo
+
+    # Conflict with our design choices or idiomatic Go patterns
+    - exhaustruct # conflicts with idiomatic zero-value initialization (cobra.Command has 30+ fields)
+    - nlreturn    # conflicts with wsl_v5 blank-line rules
+    - noinlineerr # disallows the standard `if err := f(); err != nil` pattern
+    - varnamelen  # idiomatic Go uses short names: r, fs, ctx, p, h, b, tt
+
+  settings:
+    cyclop:
+      max-complexity: 25
+    funlen:
+      lines: 100
+      statements: 60
+    lll:
+      line-length: 130
+    mnd:
+      ignored-numbers:
+        - "0o644"
+        - "0o755"
+        - "2"
+    nestif:
+      min-complexity: 8
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/rotisserie/eris*
+
+  exclusions:
+    # Linters disabled in *_test.go files: tests favour readability and
+    # locality over the brevity/repetition rules these linters enforce.
+    rules:
+      - path: _test\.go$
+        linters:
+          - funlen     # table-driven tests legitimately get long
+          - goconst    # repeated literals in assertions are clearer than constants
+          - dupl       # parallel test cases often look duplicated by design
+          - lll        # wide assertion / setup lines are fine in tests
+          - mnd        # magic numbers are common in fixtures
+          - maintidx   # test maintainability index is not meaningful
+          - cyclop     # test setup can have many branches
+          - funcorder  # helpers and test functions can be ordered freely
+          - gochecknoglobals # shared test fixtures live as package vars/consts

@@ -1,0 +1,66 @@
+# .sbxgo/config.toml - sandbox configuration for this project
+# Commit this file so everyone on the team uses the same settings.
+
+[sandbox]
+
+# agent: the AI agent to run inside the sandbox.
+agent = "claude"
+
+# docker: source of the sandbox template image.
+# Optional. If omitted, sbx uses its default base image. When set, run
+# `sbxgo setup` to build or pull and load the template before running
+# `sbxgo run`.
+#
+# Set exactly one of:
+#
+#   [sandbox.docker]
+#   image = "ghcr.io/acme/dev:1.4.0"   # pull a published image
+#
+# OR
+#
+#   [sandbox.docker.build]
+#   context    = "."                     # build context (default ".")
+#   dockerfile = ".sbxgo/Dockerfile"     # default ".sbxgo/Dockerfile"
+
+# network_policy: base network access level for the sandbox.
+# One of:
+#   allow-all   allow all outbound traffic
+#   balanced    default sbx policy
+#   deny-all    deny all by default; use allowed_domains to whitelist
+network_policy = "deny-all"
+
+# branch: the git branch to check out inside the sandbox.
+# Optional. Values:
+#   auto            sbx picks the current branch
+#   <branch-name>   check out a specific branch
+#   omit/""         direct mode (no branch checkout)
+# branch = "auto"
+
+# allowed_domains: domains to explicitly allow on top of network_policy.
+# Host-wide today (https://github.com/docker/sbx-releases/issues/91);
+# rules persist across sandboxes.
+allowed_domains = [
+  # "api.example.com",
+]
+
+# denied_domains: domains to explicitly deny. Always wins over allow.
+denied_domains = [
+  # "example.com",
+]
+
+# kits: kit directories to install in the sandbox.
+# Paths are relative to the project root.
+kits = [
+  ".sbxgo/kits/go-tools",
+]
+
+# required_secrets: secret names that must be set on the host via `sbx secret set`.
+# sbxgo run and sbxgo setup will warn (but not fail) if any are missing.
+required_secrets = [
+  # "MY_SECRET_TOKEN",
+]
+
+# extra_workspaces: additional host directories to mount into the sandbox.
+extra_workspaces = [
+  # "/home/user/shared-libs",
+]

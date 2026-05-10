@@ -1,0 +1,77 @@
+schemaVersion: "1"
+kind: mixin
+name: go-tools
+description: Latest Go toolchain, latest golangci-lint, and sbx CLI for sbxgo development
+
+network:
+  allowedDomains:
+    - go.dev
+    - golang.org
+    - dl.google.com
+    - proxy.golang.org
+    - sum.golang.org
+    - github.com
+    - api.github.com
+    - objects.githubusercontent.com
+    - raw.githubusercontent.com
+    - release-assets.githubusercontent.com
+
+commands:
+  install:
+    - command: apt-get update -qq
+      user: "0"
+      description: Refresh apt package index
+    - command: apt-get install -y --no-install-recommends curl ca-certificates git
+      user: "0"
+      description: Install curl, CA certs, and git
+    - command: rm -rf /var/lib/apt/lists/*
+      user: "0"
+      description: Clean apt cache
+    - command: 'bash -c ''set -e; ver=$(curl -fsSL "https://go.dev/VERSION?m=text" | head -n1); echo "Resolved latest Go: ${ver}"; curl -fsSL "https://go.dev/dl/${ver}.linux-amd64.tar.gz" -o /tmp/go.tar.gz'''
+      user: "0"
+      description: Resolve and download the latest stable Go release
+    - command: rm -rf /usr/local/go
+      user: "0"
+      description: Remove any prior Go installation
+    - command: tar -C /usr/local -xzf /tmp/go.tar.gz
+      user: "0"
+      description: Extract Go to /usr/local
+    - command: rm /tmp/go.tar.gz
+      user: "0"
+      description: Remove Go tarball
+    - command: ln -sf /usr/local/go/bin/go /usr/local/bin/go
+      user: "0"
+      description: Symlink go into /usr/local/bin
+    - command: ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+      user: "0"
+      description: Symlink gofmt into /usr/local/bin
+    - command: curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b /usr/local/bin
+      user: "0"
+      description: Install the latest golangci-lint release
+    - command: curl -fsSL https://github.com/docker/sbx-releases/releases/latest/download/DockerSandboxes-linux.tar.gz -o /tmp/sbx.tar.gz
+      user: "0"
+      description: Download sbx CLI release
+    - command: mkdir -p /tmp/sbx-extract
+      user: "0"
+      description: Create staging directory for sbx extraction
+    - command: tar -xzf /tmp/sbx.tar.gz -C /tmp/sbx-extract
+      user: "0"
+      description: Extract sbx release tarball
+    - command: 'bash -c ''set -e; bin=$(find /tmp/sbx-extract -type f \( -name sbx -o -name docker-sbx \) -perm -u+x | head -1); [ -n "$bin" ] || bin=$(find /tmp/sbx-extract -type f \( -name sbx -o -name docker-sbx \) | head -1); [ -n "$bin" ] || { echo "sbx binary not found in DockerSandboxes-linux.tar.gz" >&2; exit 1; }; install -m 0755 "$bin" /usr/local/bin/sbx'''
+      user: "0"
+      description: Locate and install the sbx binary
+    - command: rm -rf /tmp/sbx-extract /tmp/sbx.tar.gz
+      user: "0"
+      description: Remove sbx extraction artifacts
+    - command: 'bash -c ''cat /proc/sys/kernel/random/uuid | tr -d "-" > /etc/machine-id'''
+      user: "0"
+      description: Populate /etc/machine-id so sbx analytics stops warning
+    - command: echo 'export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"' >> /etc/sandbox-persistent.sh
+      user: "0"
+      description: Persist Go PATH for non-interactive shells
+    - command: echo 'export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"' > /etc/profile.d/sbxgo-tools.sh
+      user: "0"
+      description: Persist Go PATH for login shells
+    - command: chmod 0644 /etc/profile.d/sbxgo-tools.sh
+      user: "0"
+      description: Set readable permissions on the profile fragment
