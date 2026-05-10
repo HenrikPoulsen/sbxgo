@@ -5,7 +5,7 @@ A single-binary CLI for running AI coding agents in [Docker Sandboxes](https://g
 - **`sbxgo setup`**: build or pull the Docker template image for your project, create the sandbox, and (after a confirmation prompt) attach to the agent. Run once when setting up, and again when the image source changes.
 - **`sbxgo run`**: resume or create the sandbox for the current project, detecting drift in create-time config along the way. Your everyday command.
 
-Inspired by [maxkrivich/sbx-toolkit](https://github.com/maxkrivich/sbx-toolkit). The original project took a machine-level, dotfiles-style approach, baking `~/.claude` into a shared local image used by all projects. `sbxgo` shifts to a project-level model: each project owns its own Dockerfile and config, committed to the repo, so the whole team gets the same environment without any per-machine setup step.
+Inspired by [maxkrivich/sbx-toolkit](https://github.com/maxkrivich/sbx-toolkit). `sbxgo` shifts to a project-level model: each project owns its own Dockerfile and config, committed to the repo, so the whole team gets the same environment without any per-machine setup step.
 
 My hope is that `sbx` makes this project redundant over time as they add more functionality.
 As of when creating this repo it was a bit of a pain to set up `sbx` on each new repository, especially when running with a deny-all policy for increased security.
@@ -39,8 +39,6 @@ powershell -c "$env:SBXGO_VERSION='v0.3.0'; irm https://raw.githubusercontent.co
 ```
 
 Both installers resolve the requested release (or the latest), download the platform-specific binary, and verify its SHA-256 against the release's `checksums.txt`. On mismatch the binary is deleted and the install aborts.
-
-`SBXGO_VERSION` accepts either form (`v0.3.0` or `0.3.0`). The bash script also takes the version as a positional arg (`bash -s v0.3.0`), useful when piping. The Windows installer adds the install directory (`%LOCALAPPDATA%\Programs\sbxgo` by default; override with `$env:SBXGO_INSTALL_DIR`) to your user `PATH` — open a new terminal afterwards to pick it up.
 
 ### Via `go install`
 
@@ -273,7 +271,6 @@ PR titles must follow [Conventional Commits](https://www.conventionalcommits.org
 
 Design goals:
 - **Project-level**: config and Dockerfiles live in the repo, not on the developer's machine
-- **No runtime dependencies**: single static binary
 - **Safe by default**: secrets never touch the filesystem or image layers
 - **Testable**: all external calls go through interfaces; no global state
 
