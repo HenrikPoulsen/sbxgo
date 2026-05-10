@@ -1,0 +1,59 @@
+version: 2
+
+project_name: sbxgo
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sbxgo
+    main: ./cmd/sbxgo
+    binary: sbxgo
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.CommitDate}}
+    # Mirror sbx's own platform support.
+    targets:
+      - linux_amd64
+      - darwin_arm64
+      - windows_amd64
+
+archives:
+  # install.sh expects raw binaries named "${BINARY}_${OS}_${ARCH}", e.g.
+  # sbxgo_linux_amd64. format: binary uploads the binary directly (no archive).
+  # Windows still gets the .exe suffix automatically.
+  - id: raw
+    formats: [binary]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+# semantic-release has already created the GitHub release with notes by the time
+# goreleaser runs (via .releaserc successCmd). keep-existing tells goreleaser to
+# preserve the body and just attach our artifacts.
+release:
+  mode: keep-existing
+  # auto = mark prerelease only when the tag has a hyphen suffix (e.g. v0.1.0-rc1).
+  # Plain 0.x tags must NOT be marked prerelease: install.sh resolves the latest
+  # version through GitHub's /releases/latest endpoint, which excludes prereleases
+  # by definition. If we marked all 0.x tags as prerelease, install.sh would find
+  # nothing and the curl-pipe-bash install would break for the entire 0.x cycle.
+  prerelease: auto
+
+# Notes come from semantic-release; suppress goreleaser's own changelog so it
+# doesn't try to write to the release body.
+changelog:
+  disable: true

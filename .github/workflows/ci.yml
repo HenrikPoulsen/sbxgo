@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Lets you re-run the full pipeline by hand from the Actions tab. Useful when
+  # goreleaser fails after semantic-release has already created a release —
+  # triggering this on `main` re-attempts the release on the same commit
+  # (goreleaser's `release.mode: keep-existing` preserves the body).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel duplicate in-progress runs for the same PR; keep main pushes serial.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - name: Check go.mod / go.sum are tidy
+        run: |
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::go.mod or go.sum is not tidy. Run 'go mod tidy' locally and commit the result."
+            exit 1
+          fi
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: go build ./...
+
+  release:
+    name: Release
+    needs: [lint, test]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          install-only: true
+      - name: Install semantic-release
+        run: |
+          npm install --no-save \
+            semantic-release@^24 \
+            @semantic-release/commit-analyzer@^13 \
+            @semantic-release/release-notes-generator@^14 \
+            @semantic-release/github@^11 \
+            @semantic-release/exec@^7 \
+            conventional-changelog-conventionalcommits@^8
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

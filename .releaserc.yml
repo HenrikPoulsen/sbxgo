@@ -1,0 +1,22 @@
+branches:
+  - main
+
+# We are intentionally on 0.x. semantic-release has no built-in initialVersion
+# support (issue #1507, wontfix), so we override the breaking-change rule to
+# bump minor instead of major. When ready to graduate to 1.0.0, remove the
+# `releaseRules` block — the next breaking-flagged commit will then bump to 1.0.0.
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: conventionalcommits
+      releaseRules:
+        - breaking: true
+          release: minor
+  - - "@semantic-release/release-notes-generator"
+    - preset: conventionalcommits
+  - "@semantic-release/github"
+  # After the GitHub release exists (publish phase), invoke goreleaser with the
+  # new tag. goreleaser is configured with mode: keep-existing, so it appends
+  # binaries + checksums.txt to the release without overwriting the notes.
+  - - "@semantic-release/exec"
+    - successCmd: |
+        GORELEASER_CURRENT_TAG="v${nextRelease.version}" goreleaser release --clean
