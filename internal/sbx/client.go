@@ -185,14 +185,39 @@ func (c *Client) DenyNetwork(ctx context.Context, domains ...string) error {
 	return nil
 }
 
-// ListSecrets returns a list of secret names from `sbx secret ls`.
-func (c *Client) ListSecrets(ctx context.Context) ([]string, error) {
+// SecretEntry is one row of `sbx secret ls`.
+type SecretEntry struct {
+	// Scope is "(global)" for global secrets or the sandbox name for per-sandbox secrets.
+	Scope string
+	// Service is the sbx secret service name (see `sbx secret set --help`).
+	Service string
+}
+
+// GlobalScope is the literal scope string sbx prints for global secrets.
+const GlobalScope = "(global)"
+
+// ListSecrets returns the rows of `sbx secret ls`, including scope so callers
+// can distinguish global secrets from per-sandbox ones.
+func (c *Client) ListSecrets(ctx context.Context) ([]SecretEntry, error) {
 	out, err := c.outputCmd(ctx, "secret", "ls")
 	if err != nil {
 		return nil, eris.Wrap(err, "sbx secret ls")
 	}
 
 	return parseSecretList(string(out)), nil
+}
+
+// SetSecret stores a per-sandbox secret value via `sbx secret set`. The value
+// is piped via stdin so it never appears in argv.
+func (c *Client) SetSecret(ctx context.Context, sandboxName, service, value string) error {
+	args := c.args("secret", "set", sandboxName, service)
+	c.logCmd(args)
+
+	if err := c.runner.RunWithStdin(ctx, "sbx", value, args...); err != nil {
+		return eris.Wrapf(err, "sbx secret set %q", service)
+	}
+
+	return nil
 }
 
 // args prepends the global --debug flag (when enabled) to the provided sbx args.
@@ -264,12 +289,13 @@ func parsePolicy(output string) string {
 	return ""
 }
 
-// parseSecretList extracts the SERVICE column from `sbx secret ls` output.
+// parseSecretList parses the SCOPE and SERVICE columns from `sbx secret ls`.
 // The CLI prints a tabular listing with columns SCOPE / SERVICE / SECRET.
 // When no secrets exist, sbx prints a sentence with no header — that yields nil.
-func parseSecretList(output string) []string {
+func parseSecretList(output string) []SecretEntry {
 	var (
-		secrets    []string
+		entries    []SecretEntry
+		scopeIdx   = -1
 		serviceIdx = -1
 	)
 
@@ -281,27 +307,32 @@ func parseSecretList(output string) []string {
 
 		fields := strings.Fields(line)
 
-		if serviceIdx < 0 {
+		if scopeIdx < 0 || serviceIdx < 0 {
 			for i, f := range fields {
-				if strings.EqualFold(f, "SERVICE") {
+				switch strings.ToUpper(f) {
+				case "SCOPE":
+					scopeIdx = i
+				case "SERVICE":
 					serviceIdx = i
-					break
 				}
 			}
 
 			// Header not found on the first non-empty line — likely the
 			// "No secrets found." sentence. Bail out quietly.
-			if serviceIdx < 0 {
+			if scopeIdx < 0 || serviceIdx < 0 {
 				return nil
 			}
 
 			continue
 		}
 
-		if serviceIdx < len(fields) {
-			secrets = append(secrets, fields[serviceIdx])
+		if scopeIdx < len(fields) && serviceIdx < len(fields) {
+			entries = append(entries, SecretEntry{
+				Scope:   fields[scopeIdx],
+				Service: fields[serviceIdx],
+			})
 		}
 	}
 
-	return secrets
+	return entries
 }

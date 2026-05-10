@@ -64,9 +64,46 @@ func WorkDir() (string, error) {
 	return wd, nil
 }
 
-// checkSecrets warns about any required secrets that are not set.
-func checkSecrets(ctx context.Context, client *sbx.Client, required []string) error {
-	if len(required) == 0 {
+// secretAvailable reports whether the named service has a secret usable by
+// the sandbox — either set globally or scoped to that specific sandbox.
+// Per-sandbox secrets bound to a *different* sandbox don't count.
+func secretAvailable(existing []sbx.SecretEntry, sandboxName, service string) bool {
+	for _, e := range existing {
+		if e.Service != service {
+			continue
+		}
+
+		if e.Scope == sbx.GlobalScope || e.Scope == sandboxName {
+			return true
+		}
+	}
+
+	return false
+}
+
+// sortedServices returns the keys of secrets in stable order so log output
+// and test assertions are deterministic.
+func sortedServices(secrets map[string]string) []string {
+	services := make([]string, 0, len(secrets))
+	for s := range secrets {
+		services = append(services, s)
+	}
+
+	slices.Sort(services)
+
+	return services
+}
+
+// checkSecrets warns about declared secrets that aren't set in sbx and whose
+// env-var fallback is empty. Secrets that env vars can supply are suppressed
+// here because syncSecretsFromEnv will set them after the sandbox is created.
+func checkSecrets(
+	ctx context.Context,
+	client *sbx.Client,
+	sandboxName string,
+	secrets map[string]string,
+) error {
+	if len(secrets) == 0 {
 		return nil
 	}
 
@@ -75,14 +112,76 @@ func checkSecrets(ctx context.Context, client *sbx.Client, required []string) er
 		return eris.Wrap(err, "listing secrets")
 	}
 
-	existingSet := make(map[string]bool, len(existing))
-	for _, s := range existing {
-		existingSet[s] = true
+	for _, service := range sortedServices(secrets) {
+		if secretAvailable(existing, sandboxName, service) {
+			continue
+		}
+
+		envName := strings.TrimSpace(secrets[service])
+		if envName != "" && strings.TrimSpace(os.Getenv(envName)) != "" {
+			// The sync step will set this from env after sandbox creation.
+			continue
+		}
+
+		if envName != "" {
+			fmt.Fprintf(os.Stderr,
+				"WARNING: required secret %q is not set; populate $%s in your environment before running sbxgo\n",
+				service, envName)
+		} else {
+			fmt.Fprintf(os.Stderr, "WARNING: required secret %q is not set\n", service)
+		}
 	}
 
-	for _, req := range required {
-		if !existingSet[req] {
-			fmt.Fprintf(os.Stderr, "WARNING: required secret %q is not set (run: sbx secret set %s)\n", req, req)
+	return nil
+}
+
+// syncSecretsFromEnv sets per-sandbox secrets from environment variables for
+// any declared service whose env-var entry resolves to a non-empty value.
+// Skipped silently for services already set globally or for this sandbox.
+// Must be called AFTER sbx create — per-sandbox secrets require the sandbox
+// to exist.
+//
+// In dry-run mode the calls are logged ("Would run: …") rather than executed.
+func syncSecretsFromEnv(
+	ctx context.Context,
+	client *sbx.Client,
+	sandboxName string,
+	secrets map[string]string,
+	dryRun bool,
+) error {
+	if len(secrets) == 0 {
+		return nil
+	}
+
+	existing, err := client.ListSecrets(ctx)
+	if err != nil {
+		return eris.Wrap(err, "listing secrets before sync")
+	}
+
+	for _, service := range sortedServices(secrets) {
+		if secretAvailable(existing, sandboxName, service) {
+			continue
+		}
+
+		envName := strings.TrimSpace(secrets[service])
+		if envName == "" {
+			continue
+		}
+
+		value := strings.TrimSpace(os.Getenv(envName))
+		if value == "" {
+			continue
+		}
+
+		if dryRun {
+			fmt.Printf("Would run: sbx secret set %s %s (value piped from $%s)\n", sandboxName, service, envName)
+			continue
+		}
+
+		fmt.Printf("Setting secret %q for sandbox %q from $%s\n", service, sandboxName, envName)
+
+		if err := client.SetSecret(ctx, sandboxName, service, value); err != nil {
+			return eris.Wrapf(err, "setting secret %q from $%s", service, envName)
 		}
 	}
 

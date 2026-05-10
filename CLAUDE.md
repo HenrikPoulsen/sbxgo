@@ -69,7 +69,7 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
 | `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all` |
 | `branch` | | | `auto`, a branch name, or omit for direct mode |
-| `required_secrets` | | | Names to check; missing ones warn, do not block |
+| `[sandbox.secrets]` | | | Map of sbx service name → env var name. Declares required secrets AND tells sbxgo which env var to read for auto-sync after sandbox creation. Empty value = warn-only. |
 | `allowed_domains` | | | Added on top of base network policy |
 | `denied_domains` | | | Override even if base policy allows them |
 | `kits` | | | Kit paths passed as `--kit` to `sbx run` |

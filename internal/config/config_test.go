@@ -19,8 +19,10 @@ branch         = "auto"
 allowed_domains  = ["proxy.golang.org"]
 denied_domains   = ["evil.com"]
 kits             = [".sbxgo/kits/go"]
-required_secrets = ["ANTHROPIC_API_KEY"]
 extra_workspaces = ["/extra"]
+
+[sandbox.secrets]
+foo = "FOO_API_KEY"
 
 [sandbox.docker.build]
 dockerfile = ".sbxgo/Dockerfile"
@@ -54,7 +56,7 @@ func TestLoadConfig_Valid(t *testing.T) {
 	assert.Equal(t, []string{"proxy.golang.org"}, cfg.Sandbox.AllowedDomains)
 	assert.Equal(t, []string{"evil.com"}, cfg.Sandbox.DeniedDomains)
 	assert.Equal(t, []string{".sbxgo/kits/go"}, cfg.Sandbox.Kits)
-	assert.Equal(t, []string{"ANTHROPIC_API_KEY"}, cfg.Sandbox.RequiredSecrets)
+	assert.Equal(t, map[string]string{"foo": "FOO_API_KEY"}, cfg.Sandbox.Secrets)
 	assert.Equal(t, []string{"/extra"}, cfg.Sandbox.ExtraWorkspaces)
 }
 

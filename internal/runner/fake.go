@@ -9,17 +9,20 @@ import (
 
 // Call records a single invocation of a CommandRunner method.
 type Call struct {
-	Name string
-	Args []string
+	Name  string
+	Args  []string
+	Stdin string // populated only for RunWithStdin invocations
 }
 
 // FakeRunner is a test fake for CommandRunner that records calls.
 type FakeRunner struct {
 	// RunCalls records all calls to Run.
 	RunCalls []Call
+	// RunStdinCalls records all calls to RunWithStdin.
+	RunStdinCalls []Call
 	// OutputCalls records all calls to Output.
 	OutputCalls []Call
-	// RunError is returned by Run (if non-nil).
+	// RunError is returned by Run and RunWithStdin (if non-nil).
 	RunError error
 	// OutputResponses maps "name arg0 arg1..." to the bytes to return.
 	// If a key is not found, empty bytes are returned.
@@ -56,6 +59,12 @@ func commandKey(name string, args []string) string {
 // Run records the call and returns RunError.
 func (f *FakeRunner) Run(_ context.Context, name string, args ...string) error {
 	f.RunCalls = append(f.RunCalls, Call{Name: name, Args: args})
+	return f.RunError
+}
+
+// RunWithStdin records the call (including stdin) and returns RunError.
+func (f *FakeRunner) RunWithStdin(_ context.Context, name, stdin string, args ...string) error {
+	f.RunStdinCalls = append(f.RunStdinCalls, Call{Name: name, Args: args, Stdin: stdin})
 	return f.RunError
 }
 

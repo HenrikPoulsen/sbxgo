@@ -157,17 +157,17 @@ func TestStart_DryRun_ResumeSkipsKitAdd(t *testing.T) {
 }
 
 // TestStart_WarnsMissingRequiredSecret verifies that a warning is printed but the command proceeds
-// when a required secret is not set.
+// when a declared secret is missing from sbx and the env var isn't set either.
 func TestStart_WarnsMissingRequiredSecret(t *testing.T) {
-	t.Parallel()
-
-	cfg := "[sandbox]\nagent = \"claude\"\nrequired_secrets = [\"ANTHROPIC_API_KEY\"]\n"
+	// Not Parallel: uses t.Setenv to clear FOO_API_KEY.
+	cfg := "[sandbox]\nagent = \"claude\"\n[sandbox.secrets]\nfoo = \"FOO_API_KEY\"\n"
 
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
 	r := newHappyRunner()
-	// Configure empty secrets list (ANTHROPIC_API_KEY is missing)
+	// Empty sbx secret list AND no FOO_API_KEY in env → "foo" can't be sourced from anywhere.
 	r.SetOutputResponse("sbx", []string{"secret", "ls"}, []byte(""))
+	t.Setenv("FOO_API_KEY", "")
 
 	p := prompt.NewFakePrompter(false)
 

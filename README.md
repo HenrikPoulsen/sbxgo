@@ -222,7 +222,7 @@ The template written to `.sbxgo/config.toml` by `sbxgo setup` is [config.toml.tm
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
 | `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all` |
 | `branch` | | | `auto`, a branch name, or omit for direct mode |
-| `required_secrets` | | | Secret names to check; missing ones warn, do not block |
+| `[sandbox.secrets]` | | | Map of sbx service name → env var name. Each entry both declares a required secret (warn-on-missing) and tells sbxgo which env var to read after sandbox creation. Empty env-var value = warn-only, no auto-sync. |
 | `allowed_domains` | | | Extra domains to allow on top of the base policy |
 | `denied_domains` | | | Domains to deny even if the base policy allows them |
 | `kits` | | | Kit references applied to the sandbox; re-applied on each `sbxgo run` |
@@ -249,11 +249,14 @@ denied_domains  (always wins)
 
 ### Secrets
 
-Secret values never appear in config. `required_secrets` lists names only. `sbxgo run` and `sbxgo setup` check `sbx secret ls` and warn if any are missing. Set them once per machine:
+`[sandbox.secrets]` maps each sbx service (`sbx secret set --help` lists them) to the env var that holds its value:
 
-```bash
-sbx secret set MY_SECRET_TOKEN
+```toml
+[sandbox.secrets]
+my-service = "MY_SERVICE_API_KEY"
 ```
+
+After sandbox creation, sbxgo reads each env var and sets it as a per-sandbox secret. Pairs naturally with `op run --env-file=…`, `doppler run`, `direnv`, etc. If the env var is empty and the secret isn't already in sbx, sbxgo warns at startup.
 
 ---
 

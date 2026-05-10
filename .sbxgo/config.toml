@@ -54,11 +54,11 @@ kits = [
   ".sbxgo/kits/go-tools",
 ]
 
-# required_secrets: secret names that must be set on the host via `sbx secret set`.
-# sbxgo run and sbxgo setup will warn (but not fail) if any are missing.
-required_secrets = [
-  # "MY_SECRET_TOKEN",
-]
+# secrets: set if you need extra secrets passed into the sandbox.
+# Format: serviceName = "ENV_VAR_NAME"
+#
+# [sandbox.secrets]
+# my-service = "MY_SERVICE_API_KEY"
 
 # extra_workspaces: additional host directories to mount into the sandbox.
 extra_workspaces = [

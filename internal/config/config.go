@@ -27,15 +27,21 @@ type Config struct {
 
 // SandboxConfig holds the [sandbox] section of config.toml.
 type SandboxConfig struct {
-	Agent           string        `toml:"agent"`
-	Docker          *DockerConfig `toml:"docker"`
-	NetworkPolicy   NetworkPolicy `toml:"network_policy"`
-	Branch          string        `toml:"branch"`
-	AllowedDomains  []string      `toml:"allowed_domains"`
-	DeniedDomains   []string      `toml:"denied_domains"`
-	Kits            []string      `toml:"kits"`
-	RequiredSecrets []string      `toml:"required_secrets"`
-	ExtraWorkspaces []string      `toml:"extra_workspaces"`
+	Agent          string        `toml:"agent"`
+	Docker         *DockerConfig `toml:"docker"`
+	NetworkPolicy  NetworkPolicy `toml:"network_policy"`
+	Branch         string        `toml:"branch"`
+	AllowedDomains []string      `toml:"allowed_domains"`
+	DeniedDomains  []string      `toml:"denied_domains"`
+	Kits           []string      `toml:"kits"`
+	// Secrets maps an sbx secret service name to the environment variable
+	// that holds its value. Each entry declares that the named secret is
+	// required for the sandbox AND tells sbxgo which env var to read after
+	// sandbox creation to pipe the value into `sbx secret set <sandbox>
+	// <service>`. If the env var is empty and the secret isn't already set
+	// in sbx (globally or for this sandbox), sbxgo warns at startup.
+	Secrets         map[string]string `toml:"secrets"`
+	ExtraWorkspaces []string          `toml:"extra_workspaces"`
 }
 
 // DockerConfig holds the [sandbox.docker] section. Exactly one of Image or

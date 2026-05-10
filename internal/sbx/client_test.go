@@ -166,8 +166,8 @@ func TestListSecrets(t *testing.T) {
 	t.Parallel()
 
 	tabular := "SCOPE      SERVICE   SECRET\n" +
-		"(global)   github    test-v****\n" +
-		"my-sbx     openai    sk-12****\n"
+		"(global)   foo       test-v****\n" +
+		"my-sbx     bar       sk-12****\n"
 
 	fake := runner.NewFakeRunner()
 	fake.SetOutputResponse("sbx", []string{"secret", "ls"}, []byte(tabular))
@@ -176,7 +176,10 @@ func TestListSecrets(t *testing.T) {
 	secrets, err := client.ListSecrets(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"github", "openai"}, secrets)
+	assert.Equal(t, []sbx.SecretEntry{
+		{Scope: "(global)", Service: "foo"},
+		{Scope: "my-sbx", Service: "bar"},
+	}, secrets)
 }
 
 func TestListSecrets_Empty(t *testing.T) {
@@ -207,6 +210,22 @@ func TestListSecrets_NoneFound(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, secrets)
+}
+
+func TestSetSecret(t *testing.T) {
+	t.Parallel()
+
+	fake := runner.NewFakeRunner()
+	client := sbx.NewClient(fake)
+
+	err := client.SetSecret(context.Background(), "my-sandbox", "foo", "sk-test-value")
+
+	require.NoError(t, err)
+	require.Len(t, fake.RunStdinCalls, 1)
+	assert.Equal(t, "sbx", fake.RunStdinCalls[0].Name)
+	assert.Equal(t, []string{"secret", "set", "my-sandbox", "foo"}, fake.RunStdinCalls[0].Args)
+	assert.Equal(t, "sk-test-value", fake.RunStdinCalls[0].Stdin,
+		"value must be passed via stdin, not argv")
 }
 
 func TestSetDefaultPolicy_SendsCorrectCommand(t *testing.T) {
