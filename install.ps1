@@ -12,9 +12,8 @@
 #   SBXGO_INSTALL_DIR   Install directory. Defaults to %LOCALAPPDATA%\Programs\sbxgo.
 
 $ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'  # speeds up Invoke-WebRequest considerably
+$ProgressPreference = 'SilentlyContinue'
 
-# Force TLS 1.2; older PowerShell defaults to TLS 1.0/1.1 which GitHub rejects.
 [Net.ServicePointManager]::SecurityProtocol = `
     [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
@@ -23,13 +22,10 @@ $Binary = 'sbxgo'
 
 # detect arch
 
-# sbxgo mirrors sbx's platform support
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     'AMD64' { 'amd64' }
     default {
-        throw @"
-Unsupported Windows architecture: $($env:PROCESSOR_ARCHITECTURE)
-"@
+        throw "Unsupported Windows architecture: $($env:PROCESSOR_ARCHITECTURE)"
     }
 }
 
@@ -38,8 +34,6 @@ $asset = "${Binary}_${os}_${arch}.exe"
 
 # resolve install dir
 
-# Per-user install directory; no admin required.
-# Override with $env:SBXGO_INSTALL_DIR if you want it somewhere else.
 $installDir = if ($env:SBXGO_INSTALL_DIR) {
     $env:SBXGO_INSTALL_DIR
 } else {
@@ -53,8 +47,6 @@ if (-not (Test-Path $installDir)) {
 
 # resolve version
 
-# Requested version: from $env:SBXGO_VERSION, else the latest release.
-# Accepts "v0.3.0" or "0.3.0" and normalises to "v0.3.0".
 $requestedVersion = $env:SBXGO_VERSION
 if ($requestedVersion -and $requestedVersion -notmatch '^v') {
     $requestedVersion = "v$requestedVersion"
@@ -64,14 +56,8 @@ if ($requestedVersion) {
     $version = $requestedVersion
     Write-Host "Using requested version: $version"
 } else {
-    # Follow the redirect at https://github.com/REPO/releases/latest. The web
-    # endpoint isn't subject to the api.github.com 60/hr-per-IP rate limit, so this
-    # works behind shared NATs (corporate offices, CI providers, etc.) the same way
-    # the bash installer does it.
     function Get-FinalUrl([string]$Url) {
         $r = Invoke-WebRequest -Uri $Url -UseBasicParsing
-        # PS 5.1: BaseResponse is HttpWebResponse with .ResponseUri.
-        # PS 7+:  BaseResponse is HttpResponseMessage with .RequestMessage.RequestUri.
         if ($r.BaseResponse.PSObject.Properties['ResponseUri']) {
             return $r.BaseResponse.ResponseUri.AbsoluteUri
         }
@@ -104,14 +90,17 @@ try {
     throw $msg
 }
 
-# verify SHA-256 checksum against the release's checksums.txt.
-# If the file is missing (older releases), warn and continue; if it lists the
-# asset and the hash mismatches, abort and delete the downloaded binary.
+# verify checksum
 
 $checksumsUrl = "https://github.com/$Repo/releases/download/$version/checksums.txt"
 $checksums    = $null
 try {
-    $checksums = (Invoke-WebRequest -Uri $checksumsUrl -UseBasicParsing).Content
+    $response = Invoke-WebRequest -Uri $checksumsUrl -UseBasicParsing
+    $checksums = if ($response.Content -is [byte[]]) {
+        [System.Text.Encoding]::UTF8.GetString($response.Content)
+    } else {
+        $response.Content
+    }
 } catch {
     Write-Warning "Could not fetch $checksumsUrl; skipping checksum verification"
 }
@@ -138,7 +127,7 @@ if ($checksums) {
 
 Write-Host "Installed $Binary to $installPath"
 
-# ensure install dir is on user PATH
+# add to PATH
 
 $userPath         = [Environment]::GetEnvironmentVariable('Path', 'User')
 $userPathSegments = if ($userPath) { $userPath -split ';' | Where-Object { $_ } } else { @() }

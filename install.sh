@@ -26,13 +26,9 @@ case "$ARCH" in
   aarch64|arm64) ARCH="arm64" ;;
 esac
 
-# Validate the OS/arch combination. sbxgo mirrors sbx's platform support: the
-# release pipeline only builds binaries for these three combos. Anyone on a
-# different platform should use `go install` (printed in the error below).
 case "$OS/$ARCH" in
   linux/amd64|darwin/arm64) ;;
   *)
-    # Detect Windows-on-bash (MSYS, Git Bash, Cygwin) and point at install.ps1.
     case "$OS" in
       mingw*|msys*|cygwin*|*nt-*)
         cat >&2 <<EOF
@@ -74,10 +70,6 @@ if [[ -n "$REQUESTED_VERSION" ]]; then
   VERSION="$REQUESTED_VERSION"
   echo "Using requested version: $VERSION"
 else
-  # Resolve the latest release tag by following the redirect at
-  # https://github.com/REPO/releases/latest. The web endpoint isn't subject to
-  # the api.github.com 60/hr-per-IP rate limit, so this works reliably behind
-  # shared NATs (corporate offices, CI providers, etc.).
   LATEST_URL="https://github.com/${REPO}/releases/latest"
   final_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$LATEST_URL")"
   VERSION="${final_url##*/}"
@@ -105,9 +97,7 @@ if ! curl -fsSL "$url" -o "$install_path"; then
   exit 1
 fi
 
-# verify SHA-256 checksum against the release's checksums.txt.
-# If the file is missing (older releases), warn and continue; if it lists the
-# asset and the hash mismatches, abort and delete the downloaded binary.
+# verify checksum
 
 CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
 if checksums="$(curl -fsSL "$CHECKSUMS_URL")"; then
