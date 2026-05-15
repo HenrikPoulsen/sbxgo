@@ -47,7 +47,8 @@ func TestStart_ResumesSandboxWhenExists(t *testing.T) {
 }
 
 // TestStart_CreatesSandboxWhenNotExists verifies that a new sandbox is created (sbx create)
-// and then attached (sbx run) when no sandbox exists yet.
+// and then attached (sbx run) when no sandbox exists yet. The user is prompted before
+// attach so create output is readable before `sbx run` clears the terminal.
 func TestStart_CreatesSandboxWhenNotExists(t *testing.T) {
 	t.Parallel()
 
@@ -55,7 +56,7 @@ func TestStart_CreatesSandboxWhenNotExists(t *testing.T) {
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
 	r := newHappyRunner()
-	p := prompt.NewFakePrompter(false)
+	p := prompt.NewFakePrompter(true) // confirm attach
 
 	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
 
@@ -63,7 +64,9 @@ func TestStart_CreatesSandboxWhenNotExists(t *testing.T) {
 	assert.True(t, hasSbxCall(r.RunCalls, "create", "claude", "."),
 		"expected sbx create with agent and workspace for new sandbox")
 	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName),
-		"expected sbx run <sandbox-name> to attach after creation")
+		"expected sbx run <sandbox-name> to attach after creation when user confirms")
+	require.Len(t, p.Calls, 1, "expected exactly the attach prompt")
+	assert.True(t, p.Defaults[0], "attach prompt should default to yes")
 
 	_, ok := fs.Files[sandbox.CreateStateFile]
 	assert.True(t, ok, "expected create-state file to be written after creating sandbox")
@@ -183,7 +186,7 @@ func TestStart_WarnsMissingRequiredSecret(t *testing.T) {
 	// Configure empty secrets list (ANTHROPIC_API_KEY is missing)
 	r.SetOutputResponse("sbx", []string{"secret", "ls"}, []byte(""))
 
-	p := prompt.NewFakePrompter(false)
+	p := prompt.NewFakePrompter(true) // confirm attach
 
 	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
 
@@ -342,6 +345,82 @@ func TestStart_DryRunSkipsPolicyCalls(t *testing.T) {
 
 	assert.False(t, hasSbxCall(r.RunCalls, "policy", "allow"),
 		"dry-run must not call sbx policy allow on resume")
+}
+
+// TestStart_RecreatePathPausesBeforeAttach verifies the recreate flow goes
+// through the same "Start the agent now?" prompt as `sbxgo setup` instead of
+// jumping straight into `sbx run`, so the user can read recreate output
+// (kit installs etc.) before the terminal is cleared.
+func TestStart_RecreatePathPausesBeforeAttach(t *testing.T) {
+	t.Parallel()
+
+	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(true) // confirm recreate AND attach
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.NoError(t, err)
+	require.Len(t, p.Calls, 2, "expected drift recreate prompt followed by attach prompt")
+	assert.Contains(t, p.Calls[0], "Recreate", "first prompt is the drift recreate confirmation")
+	assert.Contains(t, p.Calls[1], "Start the agent now", "second prompt is the attach confirmation")
+	assert.True(t, p.Defaults[1], "attach prompt should default to yes")
+	assert.True(t, hasSbxCall(r.RunCalls, "rm", "--force", sandboxName))
+	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName),
+		"sbx run should still fire when the user confirms the attach prompt")
+}
+
+// TestStart_RecreateDeclineAttachSkipsRun verifies the complement: declining
+// the attach prompt after a recreate leaves the new sandbox in place but
+// skips `sbx run`, matching `sbxgo setup`'s behavior.
+func TestStart_RecreateDeclineAttachSkipsRun(t *testing.T) {
+	t.Parallel()
+
+	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
+	r := newRunnerWithExistingSandbox()
+	// FakePrompter returns the same answer for every Confirm call, so this
+	// test exercises the "decline recreate" path, not "recreate then decline
+	// attach". A dedicated fresh-create test below covers attach-declined.
+	p := prompt.NewFakePrompter(false)
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.NoError(t, err)
+	// User declined recreate; existing sandbox should be resumed via sbx run.
+	assert.False(t, hasSbxCall(r.RunCalls, "rm"), "no removal when recreate is declined")
+	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName),
+		"existing sandbox is resumed when recreate is declined")
+}
+
+// TestStart_FreshCreateDeclineAttachSkipsRun verifies that on the fresh-create
+// path (no existing sandbox), declining the attach prompt creates the sandbox
+// but does NOT call `sbx run`, matching `sbxgo setup`'s behavior.
+func TestStart_FreshCreateDeclineAttachSkipsRun(t *testing.T) {
+	t.Parallel()
+
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false) // decline attach
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.NoError(t, err)
+	assert.True(t, hasSbxCall(r.RunCalls, "create", "claude", "."),
+		"sandbox should still be created when attach is declined")
+	assert.False(t, hasSbxCall(r.RunCalls, "run", sandboxName),
+		"sbx run must not fire when user declines the attach prompt")
+	require.Len(t, p.Calls, 1, "expected exactly the attach prompt")
+	assert.Contains(t, p.Calls[0], "Start the agent now")
 }
 
 // TestStart_NoDriftWhenConfigUnchanged verifies that a matching state hash skips the prompt.
