@@ -64,10 +64,6 @@ func Start(
 		return err
 	}
 
-	if err := applyPolicy(ctx, sbxClient, &cfg.Sandbox); err != nil {
-		return err
-	}
-
 	if err := checkSecrets(ctx, sbxClient, cfg.Sandbox.RequiredSecrets); err != nil {
 		return err
 	}
@@ -158,9 +154,9 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 	return true, nil
 }
 
-// resumeSandbox resumes an existing sandbox, re-applying any configured kits first
-// so kit changes in config.toml take effect without recreating the sandbox.
-// Prints a dry-run message if applicable.
+// resumeSandbox resumes an existing sandbox, re-applying configured policy
+// rules and kits first so config.toml changes take effect without recreating
+// the sandbox. Prints a dry-run message if applicable.
 func resumeSandbox(
 	ctx context.Context,
 	opts StartOptions,
@@ -172,6 +168,10 @@ func resumeSandbox(
 		fmt.Printf("Would resume sandbox '%s'\n", sandboxName)
 	} else {
 		fmt.Printf("Resuming sandbox '%s'\n", sandboxName)
+	}
+
+	if err := applyPolicy(ctx, sbxClient, sandboxName, &cfg.Sandbox, opts.DryRun); err != nil {
+		return err
 	}
 
 	for _, kit := range cfg.Sandbox.Kits {
@@ -229,6 +229,11 @@ func createSandbox(
 
 	if opts.DryRun {
 		fmt.Printf("Would run: sbx create %s\n", strings.Join(runArgs, " "))
+
+		if err := applyPolicy(ctx, sbxClient, sandboxName, &cfg.Sandbox, true); err != nil {
+			return err
+		}
+
 		fmt.Printf("Would run: sbx run %s\n", sandboxName)
 
 		return nil
@@ -239,6 +244,10 @@ func createSandbox(
 	}
 
 	if err := writeCreateState(cfg, fs); err != nil {
+		return err
+	}
+
+	if err := applyPolicy(ctx, sbxClient, sandboxName, &cfg.Sandbox, false); err != nil {
 		return err
 	}
 

@@ -22,13 +22,14 @@ agent = "{{AGENT}}"
 #   context    = "."                     # build context (default ".")
 #   dockerfile = ".sbxgo/Dockerfile"     # default ".sbxgo/Dockerfile"
 
-# network_policy: base network access level for the sandbox.
+# network_policy: declares the baseline you expect this sandbox to run under.
 # One of:
 #   allow-all   allow all outbound traffic
 #   balanced    default sbx policy
 #   deny-all    deny all by default; use allowed_domains to whitelist
-# Host-wide today (https://github.com/docker/sbx-releases/issues/91);
-# sbxgo only warns on mismatch.
+# sbxgo does NOT change the host-wide default. Set it once on the host with
+# `sbx policy set-default <value>`; this field is documentation + a hint for
+# what allowed_domains/denied_domains layer on top of.
 network_policy = "deny-all"
 
 # branch: the git branch to check out inside the sandbox.
@@ -39,13 +40,14 @@ network_policy = "deny-all"
 # branch = "auto"
 
 # allowed_domains: domains to explicitly allow on top of network_policy.
-# Host-wide today (https://github.com/docker/sbx-releases/issues/91);
-# rules persist across sandboxes.
+# Scoped to this sandbox only (sbx 0.29.0+). sbxgo re-applies on every run;
+# adding the same rule again is a no-op (sbx reports "Already covered").
 allowed_domains = [
   # "api.example.com",
 ]
 
-# denied_domains: domains to explicitly deny. Always wins over allow.
+# denied_domains: domains to explicitly deny for this sandbox. Always wins
+# over allow.
 denied_domains = [
   # "example.com",
 ]

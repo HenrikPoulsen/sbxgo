@@ -67,10 +67,10 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 | `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
-| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all` |
+| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only — sbxgo never changes the host-wide default; set it with `sbx policy set-default`. |
 | `branch` | | | `auto`, a branch name, or omit for direct mode |
 | `required_secrets` | | | Names to check; missing ones warn, do not block |
-| `allowed_domains` | | | Added on top of base network policy |
-| `denied_domains` | | | Override even if base policy allows them |
+| `allowed_domains` | | | Sandbox-scoped allow rules added each run (sbx 0.29.0+). Re-add is idempotent. |
+| `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |
 | `kits` | | | Kit paths passed as `--kit` to `sbx run` |
 | `extra_workspaces` | | | Extra host paths to mount into the sandbox |
