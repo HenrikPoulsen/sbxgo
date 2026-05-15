@@ -107,10 +107,11 @@ func loadConfig(path string, fs fsutil.FileSystem) (*config.Config, error) {
 // computeCreateStateHash hashes the subset of config that requires a sandbox
 // recreate when changed. Returns a hex-encoded SHA-256.
 //
-// kits are deliberately excluded: resumeSandbox re-applies kits via `sbx kit
-// add` on every run, so adding/removing a kit does not require recreating the
-// sandbox. (Note that sbx has no `kit rm`, so a kit removed from config stays
-// active in the sandbox until it is recreated.)
+// Kit contents are included because sbx applies kits at `sbx create` time and
+// has no `kit rm`. Re-applying via `sbx kit add` on every resume is unsafe
+// (e.g. apt locks during package installs) and silently overlays files, so
+// sbxgo treats kit changes as drift instead: the user is prompted to
+// recreate, which re-applies the kit cleanly at creation.
 func computeCreateStateHash(cfg *config.Config, fs fsutil.FileSystem) (string, error) {
 	h := sha256.New()
 
@@ -129,6 +130,15 @@ func computeCreateStateHash(cfg *config.Config, fs fsutil.FileSystem) (string, e
 
 	if err := hashDockerSource(h, cfg.Sandbox.Docker, fs); err != nil {
 		return "", err
+	}
+
+	// Kits are hashed in declared order, since sbx applies them in order
+	// and a reorder is a meaningful semantic change (later kits can
+	// override earlier ones).
+	for _, kit := range cfg.Sandbox.Kits {
+		if err := hashKit(h, kit, fs); err != nil {
+			return "", err
+		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -187,6 +197,56 @@ func hashDockerSource(h hash.Hash, dc *config.DockerConfig, fs fsutil.FileSystem
 	return nil
 }
 
+// hashKit folds a kit reference into h. For local-directory kits
+// (detected by the presence of spec.yaml inside the path), the full file
+// tree is hashed so any edit to spec.yaml or files/ counts as drift. For
+// non-directory references (URL, OCI ref, ZIP path), the reference string
+// itself is hashed.
+func hashKit(h hash.Hash, kit string, fs fsutil.FileSystem) error {
+	if _, err := fmt.Fprintf(h, "kit:%s\n", kit); err != nil {
+		return eris.Wrap(err, "hashing kit reference")
+	}
+
+	hasSpec, err := fs.Exists(filepath.Join(kit, "spec.yaml"))
+	if err != nil {
+		return eris.Wrapf(err, "checking spec.yaml for kit %q", kit)
+	}
+
+	if !hasSpec {
+		// Not a local directory we can introspect; the reference string
+		// above is the only signal we have.
+		return nil
+	}
+
+	files, err := fs.WalkFiles(kit)
+	if err != nil {
+		return eris.Wrapf(err, "walking kit directory %q", kit)
+	}
+
+	for _, rel := range files {
+		full := filepath.ToSlash(filepath.Join(kit, rel))
+
+		data, err := fs.ReadFile(full)
+		if err != nil {
+			return eris.Wrapf(err, "reading kit file %q", full)
+		}
+
+		if _, err := fmt.Fprintf(h, "file:%s:", rel); err != nil {
+			return eris.Wrap(err, "hashing kit file path")
+		}
+
+		if _, err := h.Write(data); err != nil {
+			return eris.Wrap(err, "hashing kit file body")
+		}
+
+		if _, err := io.WriteString(h, "\n"); err != nil {
+			return eris.Wrap(err, "hashing kit file terminator")
+		}
+	}
+
+	return nil
+}
+
 // writeCreateState writes the current create-state hash to CreateStateFile.
 func writeCreateState(cfg *config.Config, fs fsutil.FileSystem) error {
 	hash, err := computeCreateStateHash(cfg, fs)
@@ -203,7 +263,7 @@ func writeCreateState(cfg *config.Config, fs fsutil.FileSystem) error {
 
 // checkDrift returns (drifted, hasState, err). drifted is true if the stored
 // create-state hash differs from the current one. hasState is false if no
-// state file exists yet (sandbox predates this feature) — the caller should
+// state file exists yet (sandbox predates this feature); the caller should
 // then write the current state.
 func checkDrift(cfg *config.Config, fs fsutil.FileSystem) (bool, bool, error) {
 	hasState, err := fs.Exists(CreateStateFile)

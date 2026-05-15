@@ -4,7 +4,7 @@ branches:
 # We are intentionally on 0.x. semantic-release has no built-in initialVersion
 # support (issue #1507, wontfix), so we override the breaking-change rule to
 # bump minor instead of major. When ready to graduate to 1.0.0, remove the
-# `releaseRules` block — the next breaking-flagged commit will then bump to 1.0.0.
+# `releaseRules` block; the next breaking-flagged commit will then bump to 1.0.0.
 plugins:
   - - "@semantic-release/commit-analyzer"
     - preset: conventionalcommits

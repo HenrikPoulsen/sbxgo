@@ -52,8 +52,10 @@ denied_domains = [
   # "example.com",
 ]
 
-# kits: kit directories to install in the sandbox.
-# Paths are relative to the project root.
+# kits: kit references applied at sandbox creation. Local directory paths
+# are relative to the project root. Editing a kit's spec.yaml or files/
+# (or adding, removing, or reordering kits here) is treated as create-time
+# drift and `sbxgo run` will prompt to recreate the sandbox.
 kits = [
   # ".sbxgo/kits/my-tools",
 ]

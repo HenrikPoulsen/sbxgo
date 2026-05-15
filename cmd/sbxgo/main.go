@@ -20,7 +20,7 @@ import (
 // Populated by goreleaser at build time via -ldflags -X.
 // "dev" / "" defaults are what you see from a plain `go build`.
 //
-//nolint:gochecknoglobals // ldflag injection target — must be a package-level var
+//nolint:gochecknoglobals // ldflag injection target, must be a package-level var
 var (
 	version = "dev"
 	commit  = ""

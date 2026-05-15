@@ -113,16 +113,6 @@ func (c *Client) Remove(ctx context.Context, name string) error {
 	return nil
 }
 
-// AddKit applies a kit to an existing sandbox via `sbx kit add`.
-// This is idempotent for mixin kits — re-adding the same kit just re-records metadata.
-func (c *Client) AddKit(ctx context.Context, sandboxName, kitPath string) error {
-	if err := c.runCmd(ctx, "kit", "add", sandboxName, kitPath); err != nil {
-		return eris.Wrapf(err, "sbx kit add %q %q", sandboxName, kitPath)
-	}
-
-	return nil
-}
-
 // LoadTemplate loads a tar file into the sbx template store.
 func (c *Client) LoadTemplate(ctx context.Context, tarPath string) error {
 	if err := c.runCmd(ctx, "template", "load", tarPath); err != nil {
@@ -227,7 +217,7 @@ func (c *Client) args(rest ...string) []string {
 }
 
 // logCmd writes the command line to the verbose log when verbose is enabled.
-// A failed write to the log sink is intentionally ignored — best-effort logging
+// A failed write to the log sink is intentionally ignored: best-effort logging
 // must never break the underlying command.
 func (c *Client) logCmd(args []string) {
 	if !c.verbose || c.logOut == nil {
@@ -331,7 +321,7 @@ func parsePolicy(output string) string {
 
 // parseSecretList extracts the SERVICE column from `sbx secret ls` output.
 // The CLI prints a tabular listing with columns SCOPE / SERVICE / SECRET.
-// When no secrets exist, sbx prints a sentence with no header — that yields nil.
+// When no secrets exist, sbx prints a sentence with no header, which yields nil.
 func parseSecretList(output string) []string {
 	var (
 		secrets    []string
@@ -354,7 +344,7 @@ func parseSecretList(output string) []string {
 				}
 			}
 
-			// Header not found on the first non-empty line — likely the
+			// Header not found on the first non-empty line, likely the
 			// "No secrets found." sentence. Bail out quietly.
 			if serviceIdx < 0 {
 				return nil

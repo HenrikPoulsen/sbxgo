@@ -172,7 +172,7 @@ func TestListSecrets_Empty(t *testing.T) {
 }
 
 // TestListSecrets_NoneFound covers the human-readable "No secrets found."
-// message sbx prints when nothing is stored — there is no header row to parse.
+// message sbx prints when nothing is stored, since there is no header row to parse.
 func TestListSecrets_NoneFound(t *testing.T) {
 	t.Parallel()
 

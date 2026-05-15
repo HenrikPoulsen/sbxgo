@@ -2,6 +2,8 @@ package fsutil
 
 import (
 	"io/fs"
+	"sort"
+	"strings"
 
 	"github.com/rotisserie/eris"
 )
@@ -74,4 +76,23 @@ func (f *FakeFileSystem) MkdirAll(path string, _ fs.FileMode) error {
 func (f *FakeFileSystem) CopyDir(src, dst string) error {
 	f.CopyDirCalls = append(f.CopyDirCalls, CopyDirCall{Src: src, Dst: dst})
 	return nil
+}
+
+// WalkFiles returns all in-memory paths that begin with root+"/" or equal
+// root, sorted, with the prefix stripped. Used by the kit content hasher in
+// tests to deterministically reproduce a directory walk.
+func (f *FakeFileSystem) WalkFiles(root string) ([]string, error) {
+	prefix := strings.TrimRight(root, "/") + "/"
+
+	var files []string
+
+	for path := range f.Files {
+		if rel, ok := strings.CutPrefix(path, prefix); ok {
+			files = append(files, rel)
+		}
+	}
+
+	sort.Strings(files)
+
+	return files, nil
 }
