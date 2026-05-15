@@ -47,6 +47,88 @@ func TestSetup_ScaffoldDefaultAgent(t *testing.T) {
 	assert.Contains(t, string(fs.Files[sandbox.DefaultConfigPath]), "claude")
 }
 
+// TestSetup_ScaffoldPrefillsLoginDomainsOnYes verifies that confirming the
+// scaffold-time prompt writes the agent's known login/API endpoints into
+// allowed_domains so a deny-all sandbox is usable out of the box.
+func TestSetup_ScaffoldPrefillsLoginDomainsOnYes(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(true) // accept prefill
+
+	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{Agent: "claude"}, r, fs, p)
+
+	require.NoError(t, err)
+
+	cfg := string(fs.Files[sandbox.DefaultConfigPath])
+	assert.Contains(t, cfg, "api.anthropic.com",
+		"expected Claude API endpoint in allowed_domains when user accepts prefill")
+	assert.Contains(t, cfg, "downloads.claude.ai",
+		"expected Claude download endpoint in allowed_domains when user accepts prefill")
+	assert.Contains(t, cfg, "Login/API endpoints required by the agent",
+		"expected the explanatory header comment above the prefilled block")
+
+	require.Len(t, p.Calls, 1, "expected exactly the login-domain prefill prompt during scaffold")
+	assert.True(t, p.Defaults[0], "prefill prompt should default to yes")
+	assert.Contains(t, p.Calls[0], "claude")
+}
+
+// TestSetup_ScaffoldDoesNotPrefillOnNo verifies that declining the prompt
+// leaves allowed_domains empty (just the commented example).
+func TestSetup_ScaffoldDoesNotPrefillOnNo(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false) // decline prefill
+
+	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{Agent: "claude"}, r, fs, p)
+
+	require.NoError(t, err)
+
+	cfg := string(fs.Files[sandbox.DefaultConfigPath])
+	assert.NotContains(t, cfg, "api.anthropic.com",
+		"expected no Claude endpoints in allowed_domains when user declines prefill")
+	assert.NotContains(t, cfg, "downloads.claude.ai")
+	assert.Contains(t, cfg, "allowed_domains = [",
+		"expected the empty allowed_domains placeholder block to remain")
+}
+
+// TestSetup_ScaffoldDoesNotPromptForUnknownAgent verifies that agents with no
+// known login-domain entry skip the prompt entirely.
+func TestSetup_ScaffoldDoesNotPromptForUnknownAgent(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{Agent: "shell"}, r, fs, p)
+
+	require.NoError(t, err)
+	assert.Empty(t, p.Calls, "expected no prompt when the agent has no known login domains")
+}
+
+// TestSetup_ScaffoldEmbedsLLMHeader verifies the scaffolded config carries a
+// pointer to the sbxgo docs so an agent that has never heard of sbxgo can
+// figure out what this file is for.
+func TestSetup_ScaffoldEmbedsLLMHeader(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{Agent: "claude"}, r, fs, p)
+
+	require.NoError(t, err)
+
+	cfg := string(fs.Files[sandbox.DefaultConfigPath])
+	assert.Contains(t, cfg, "github.com/HenrikPoulsen/sbxgo",
+		"expected the LLM-friendly repo pointer at the top of the scaffolded config")
+}
+
 // TestSetup_CreatesNewSandbox verifies the happy path: config exists, no sandbox yet → create + attach.
 func TestSetup_CreatesNewSandbox(t *testing.T) {
 	t.Parallel()
