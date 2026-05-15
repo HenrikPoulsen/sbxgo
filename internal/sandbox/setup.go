@@ -35,7 +35,7 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 		opts.Agent = "claude"
 	}
 
-	done, err := prepareConfig(opts, fs)
+	done, err := prepareConfig(opts, fs, p)
 	if err != nil || done {
 		return err
 	}
@@ -122,7 +122,7 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 // preview; otherwise it scaffolds a default config and returns (true, nil)
 // when scaffolding occurred so the caller can exit. Returns (false, nil)
 // when Setup should continue with the existing config.
-func prepareConfig(opts SetupOptions, fs fsutil.FileSystem) (bool, error) {
+func prepareConfig(opts SetupOptions, fs fsutil.FileSystem, p prompt.Prompter) (bool, error) {
 	if opts.DryRun {
 		fmt.Println("Dry run: no changes will be made")
 
@@ -140,7 +140,7 @@ func prepareConfig(opts SetupOptions, fs fsutil.FileSystem) (bool, error) {
 		return false, nil
 	}
 
-	created, err := scaffoldConfig(opts.Agent, fs)
+	created, err := scaffoldConfig(opts.Agent, fs, p)
 	if err != nil {
 		return false, err
 	}

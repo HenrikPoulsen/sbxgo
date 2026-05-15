@@ -1,4 +1,7 @@
-# .sbxgo/config.toml - sandbox configuration for this project
+# This project uses sbxgo to run AI coding agents in Docker Sandboxes.
+# Docs and field reference: https://github.com/HenrikPoulsen/sbxgo
+#
+# .sbxgo/config.toml - sandbox configuration for this project.
 # Commit this file so everyone on the team uses the same settings.
 
 [sandbox]
@@ -42,9 +45,7 @@ network_policy = "deny-all"
 # allowed_domains: domains to explicitly allow on top of network_policy.
 # Scoped to this sandbox only (sbx 0.29.0+). sbxgo re-applies on every run;
 # adding the same rule again is a no-op (sbx reports "Already covered").
-allowed_domains = [
-  # "api.example.com",
-]
+{{ALLOWED_DOMAINS}}
 
 # denied_domains: domains to explicitly deny for this sandbox. Always wins
 # over allow.
