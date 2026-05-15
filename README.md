@@ -14,6 +14,15 @@ So this tooling tries to make it easier to use sbx overall if you use it in a pe
 
 ---
 
+## Prerequisites
+
+`sbxgo` is a thin wrapper around the [`sbx` CLI](https://github.com/docker/sbx-releases). You need it installed and on your `PATH` before running anything in this repo:
+
+- **Minimum sbx version: `0.29.0`** — earlier releases lack functionality `sbxgo` relies on. Install or upgrade from [docker/sbx-releases](https://github.com/docker/sbx-releases).
+- `sbxgo setup` and `sbxgo run` both check the installed sbx version on every invocation and fail fast if it is missing or too old.
+
+---
+
 ## Install
 
 ### From a release (recommended)

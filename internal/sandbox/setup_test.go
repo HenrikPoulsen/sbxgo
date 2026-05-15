@@ -232,6 +232,7 @@ func TestSetup_TolerantOfHiddenDefault(t *testing.T) {
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
 	r := runner.NewFakeRunner()
+	r.SetOutputResponse("sbx", []string{"version"}, []byte(versionOK))
 	r.SetOutputResponse("sbx", []string{"ls", "--json"}, []byte(emptyListJSON))
 	// Simulate the #126 case: only user allow rules visible, no default-* row.
 	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"},

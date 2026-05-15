@@ -48,6 +48,10 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 	sbxClient := sbx.NewClient(r).SetDebug(opts.Debug).SetVerbose(opts.Debug || opts.DryRun)
 	dockerClient := docker.NewClient(r)
 
+	if err := sbxClient.CheckMinVersion(ctx); err != nil {
+		return eris.Wrap(err, "verifying sbx version")
+	}
+
 	wd, err := WorkDir()
 	if err != nil {
 		return err

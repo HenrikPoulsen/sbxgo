@@ -54,6 +54,10 @@ func Start(
 
 	sbxClient := sbx.NewClient(r).SetDebug(opts.Debug).SetVerbose(opts.Debug || opts.DryRun)
 
+	if err := sbxClient.CheckMinVersion(ctx); err != nil {
+		return eris.Wrap(err, "verifying sbx version")
+	}
+
 	wd, err := WorkDir()
 	if err != nil {
 		return err

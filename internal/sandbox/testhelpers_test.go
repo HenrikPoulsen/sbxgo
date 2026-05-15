@@ -8,6 +8,7 @@ import (
 
 	"github.com/HenrikPoulsen/sbxgo/internal/runner"
 	"github.com/HenrikPoulsen/sbxgo/internal/sandbox"
+	"github.com/HenrikPoulsen/sbxgo/internal/sbx"
 )
 
 // minimalConfig is the simplest valid .sbxgo/config.toml content.
@@ -15,6 +16,10 @@ const minimalConfig = "[sandbox]\nagent = \"claude\"\n"
 
 // emptyListJSON is the response for `sbx ls --json` when no sandboxes exist.
 const emptyListJSON = `{"sandboxes":[]}`
+
+// versionOK is the `sbx version` response that satisfies CheckMinVersion.
+// `var` rather than `const` because sbx.MinVersion is embedded at build time.
+var versionOK = "Client Version:  v" + sbx.MinVersion + " testsha\nServer Version: Unavailable\n"
 
 // currentSandboxName returns the sandbox name for the claude agent in the current working directory.
 func currentSandboxName() string {
@@ -43,6 +48,7 @@ func currentSandboxListJSON() string {
 // that Setup and Start call for a minimal config with no existing sandbox.
 func newHappyRunner() *runner.FakeRunner {
 	r := runner.NewFakeRunner()
+	r.SetOutputResponse("sbx", []string{"version"}, []byte(versionOK))
 	r.SetOutputResponse("sbx", []string{"ls", "--json"}, []byte(emptyListJSON))
 	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"}, []byte("balanced"))
 
@@ -52,6 +58,7 @@ func newHappyRunner() *runner.FakeRunner {
 // newRunnerWithExistingSandbox creates a FakeRunner configured with the current sandbox listed.
 func newRunnerWithExistingSandbox() *runner.FakeRunner {
 	r := runner.NewFakeRunner()
+	r.SetOutputResponse("sbx", []string{"version"}, []byte(versionOK))
 	r.SetOutputResponse("sbx", []string{"ls", "--json"}, []byte(currentSandboxListJSON()))
 	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"}, []byte("balanced"))
 
