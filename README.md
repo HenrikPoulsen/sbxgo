@@ -131,11 +131,12 @@ Flags:
 ```
 
 On each invocation, `sbxgo run`:
-1. Applies `allowed_domains` / `denied_domains` from config (the host-wide network policy itself is left alone — see the heads-up box below)
-2. Warns about any missing required secrets
-3. If the sandbox exists, checks for **drift** in create-time config (docker source, branch, extra_workspaces). On drift, prompts to recreate; if you decline, resumes the existing sandbox with a warning that the new config will not take effect until a recreate
-4. Resumes the existing sandbox, re-applying any kits listed in config so kit changes take effect without recreating
-5. If no sandbox exists, creates one and attaches to the agent
+1. Warns about any missing required secrets
+2. If the sandbox exists, checks for **drift** in create-time config (docker source, branch, extra_workspaces). On drift, prompts to recreate; if you decline, resumes the existing sandbox with a warning that the new config will not take effect until a recreate
+3. Resumes the existing sandbox, applying `allowed_domains` / `denied_domains` as sandbox-scoped rules, then re-applying any kits listed in config so kit changes take effect without recreating
+4. If no sandbox exists, creates one via `sbx create`, applies sandbox-scoped policy rules, then attaches to the agent
+
+The host-wide network policy is never modified by sbxgo — see the heads-up box below.
 
 ---
 
@@ -153,11 +154,11 @@ Flags:
 ```
 
 On each invocation, `sbxgo setup`:
-1. Applies `allowed_domains` / `denied_domains` from config
-2. Warns about any missing required secrets
-3. If `[sandbox.docker]` is set, builds (`docker.build`) or pulls (`docker.image`) the source image, then loads it into sbx as a named template — but only when the resolved image ID differs from the last setup
-4. If a sandbox already exists for this project, prompts to recreate it (skip with `--force`); on confirm, removes it
-5. Creates the sandbox via `sbx create`
+1. Warns about any missing required secrets
+2. If `[sandbox.docker]` is set, builds (`docker.build`) or pulls (`docker.image`) the source image, then loads it into sbx as a named template — but only when the resolved image ID differs from the last setup
+3. If a sandbox already exists for this project, prompts to recreate it (skip with `--force`); on confirm, removes it
+4. Creates the sandbox via `sbx create`
+5. Applies `allowed_domains` / `denied_domains` from config as sandbox-scoped rules
 6. Prompts "Start the agent now?" (defaults to yes; `--force` skips and attaches automatically). Decline to leave the sandbox dormant — `sbxgo run` later will attach.
 
 ---
@@ -226,11 +227,11 @@ The template written to `.sbxgo/config.toml` by `sbxgo setup` is [config.toml.tm
 | `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
-| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all` |
+| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only — sbxgo never changes the host-wide default; set it with `sbx policy set-default`. |
 | `branch` | | | `auto`, a branch name, or omit for direct mode |
 | `required_secrets` | | | Secret names to check; missing ones warn, do not block |
-| `allowed_domains` | | | Extra domains to allow on top of the base policy |
-| `denied_domains` | | | Domains to deny even if the base policy allows them |
+| `allowed_domains` | | | Sandbox-scoped allow rules added on each run (sbx 0.29.0+). Re-add is idempotent. |
+| `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |
 | `kits` | | | Kit references applied to the sandbox; re-applied on each `sbxgo run` |
 | `extra_workspaces` | | | Extra host paths to mount into the sandbox |
 
@@ -246,12 +247,12 @@ allowed_domains (additive)
 denied_domains  (always wins)
 ```
 
-> **Heads up:** `sbx policy` is host-wide today
-> ([docker/sbx-releases#91](https://github.com/docker/sbx-releases/issues/91)).
-> `sbxgo` won't auto-flip `network_policy` — you'll see a warning if it
-> doesn't match the active default. `allowed_domains` / `denied_domains` are
-> still applied, but the rules persist across sandboxes and reboots until
-> manually removed.
+> **Heads up:** `network_policy` is the *host-wide* baseline (`sbx policy
+> set-default ...`). `sbxgo` doesn't change it for you — you'll see a
+> warning if the configured value doesn't match the active default.
+> `allowed_domains` / `denied_domains` are scoped to this sandbox in sbx
+> 0.29.0+ and applied on every `sbxgo run`; re-adding the same rule is a
+> no-op (sbx reports "Already covered").
 
 ### Secrets
 

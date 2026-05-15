@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/HenrikPoulsen/sbxgo/internal/runner"
 	"github.com/HenrikPoulsen/sbxgo/internal/sandbox"
+	"github.com/HenrikPoulsen/sbxgo/internal/sbx"
 )
 
 // minimalConfig is the simplest valid .sbxgo/config.toml content.
@@ -40,11 +42,15 @@ func currentSandboxListJSON() string {
 }
 
 // newHappyRunner creates a FakeRunner pre-configured to respond to the sbx commands
-// that Setup and Start call for a minimal config with no existing sandbox.
+// that Setup and Start call for a minimal config with no existing sandbox. The
+// default `sbx policy ls <sandbox>` response is empty, so every configured
+// allow/deny domain looks "missing" and applyPolicy will emit it. Tests that
+// want to exercise the "already in place" path override with
+// configureExistingRules.
 func newHappyRunner() *runner.FakeRunner {
 	r := runner.NewFakeRunner()
 	r.SetOutputResponse("sbx", []string{"ls", "--json"}, []byte(emptyListJSON))
-	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"}, []byte("balanced"))
+	configureExistingRules(r, currentSandboxName(), nil)
 
 	return r
 }
@@ -53,14 +59,37 @@ func newHappyRunner() *runner.FakeRunner {
 func newRunnerWithExistingSandbox() *runner.FakeRunner {
 	r := runner.NewFakeRunner()
 	r.SetOutputResponse("sbx", []string{"ls", "--json"}, []byte(currentSandboxListJSON()))
-	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"}, []byte("balanced"))
+	configureExistingRules(r, currentSandboxName(), nil)
 
 	return r
 }
 
+// configureExistingRules sets up a canned `sbx policy ls <sandboxName>`
+// response containing the given rules (rendered in the same tabular shape
+// the real sbx CLI uses). Pass nil to indicate "no rules apply".
+func configureExistingRules(r *runner.FakeRunner, sandboxName string, rules []sbx.PolicyRule) {
+	var b strings.Builder
+
+	b.WriteString("NAME                                         TYPE      ORIGIN                 " +
+		"DECISION   STATUS   RESOURCES\n")
+
+	for i, rule := range rules {
+		fmt.Fprintf(&b, "local:%08d-fake                          network   local                  %-9s  active   %s\n",
+			i, rule.Decision, rule.Resource)
+	}
+
+	r.SetOutputResponse("sbx", []string{"policy", "ls", sandboxName}, []byte(b.String()))
+}
+
 // hasSbxCall returns true if any recorded Run call to "sbx" contains all the given args.
 func hasSbxCall(calls []runner.Call, argsSubset ...string) bool {
-	for _, call := range calls {
+	return indexOfSbxCall(calls, argsSubset...) >= 0
+}
+
+// indexOfSbxCall returns the index of the first sbx call whose args contain
+// every entry in argsSubset, or -1 if none match. Used by ordering assertions.
+func indexOfSbxCall(calls []runner.Call, argsSubset ...string) int {
+	for i, call := range calls {
 		if call.Name != "sbx" {
 			continue
 		}
@@ -70,15 +99,14 @@ func hasSbxCall(calls []runner.Call, argsSubset ...string) bool {
 		for _, want := range argsSubset {
 			if !slices.Contains(call.Args, want) {
 				matched = false
-
 				break
 			}
 		}
 
 		if matched {
-			return true
+			return i
 		}
 	}
 
-	return false
+	return -1
 }

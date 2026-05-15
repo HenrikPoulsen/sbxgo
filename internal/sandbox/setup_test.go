@@ -10,6 +10,7 @@ import (
 	"github.com/HenrikPoulsen/sbxgo/internal/prompt"
 	"github.com/HenrikPoulsen/sbxgo/internal/runner"
 	"github.com/HenrikPoulsen/sbxgo/internal/sandbox"
+	"github.com/HenrikPoulsen/sbxgo/internal/sbx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -206,34 +207,40 @@ func TestSetup_DryRun_ExistingSandbox_ForceStillPreviews(t *testing.T) {
 	assert.Empty(t, p.Calls, "--force already skips prompts; dry-run shouldn't either")
 }
 
-func TestSetup_DoesNotFlipNetworkPolicy(t *testing.T) {
+// TestSetup_NeverChangesHostWideDefault is a regression guard: sbxgo manages
+// per-sandbox rules only and must never call `sbx policy set-default`, even
+// when the configured network_policy differs from the host-wide default.
+func TestSetup_NeverChangesHostWideDefault(t *testing.T) {
 	t.Parallel()
 
 	cfg := "[sandbox]\nagent = \"claude\"\nnetwork_policy = \"deny-all\"\n"
 
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
-	r := newHappyRunner() // returns "balanced" for policy ls
+	r := newHappyRunner()
+	// Simulate a mismatch: host default is "balanced", config asks for "deny-all".
+	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"}, []byte("balanced"))
+
 	p := prompt.NewFakePrompter(false)
 
 	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p)
 
-	require.NoError(t, err)
+	require.NoError(t, err, "mismatch should warn, not fail")
 	assert.False(t, hasSbxCall(r.RunCalls, "policy", "set-default"),
-		"expected sbxgo to never call set-default; user must change the host-wide default manually")
+		"sbxgo must never call set-default; the host-wide default is a user choice")
 }
 
-// https://github.com/docker/sbx-releases/issues/126: policy ls can hide the default-* row when user rules exist.
-func TestSetup_TolerantOfHiddenDefault(t *testing.T) {
+// TestSetup_HiddenDefaultTolerated covers the issue-#126 case: `policy ls`
+// returns no recognizable token. We should proceed without warning rather
+// than fail.
+func TestSetup_HiddenDefaultTolerated(t *testing.T) {
 	t.Parallel()
 
 	cfg := "[sandbox]\nagent = \"claude\"\nnetwork_policy = \"deny-all\"\n"
 
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
-	r := runner.NewFakeRunner()
-	r.SetOutputResponse("sbx", []string{"ls", "--json"}, []byte(emptyListJSON))
-	// Simulate the #126 case: only user allow rules visible, no default-* row.
+	r := newHappyRunner()
 	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"},
 		[]byte("local:abc  network  local  allow  active  example.com\n"))
 
@@ -242,26 +249,6 @@ func TestSetup_TolerantOfHiddenDefault(t *testing.T) {
 	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p)
 
 	require.NoError(t, err)
-	assert.False(t, hasSbxCall(r.RunCalls, "policy", "set-default"),
-		"expected sbxgo to skip set-default when current policy is unknown")
-}
-
-// TestSetup_SkipsPolicyChangeWhenAlreadySet verifies no set-default call when policy matches.
-func TestSetup_SkipsPolicyChangeWhenAlreadySet(t *testing.T) {
-	t.Parallel()
-
-	cfg := "[sandbox]\nagent = \"claude\"\nnetwork_policy = \"balanced\"\n"
-
-	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
-	r := newHappyRunner() // already returns "balanced"
-	p := prompt.NewFakePrompter(false)
-
-	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p)
-
-	require.NoError(t, err)
-	assert.False(t, hasSbxCall(r.RunCalls, "policy", "set-default"),
-		"expected no policy change when already at desired policy")
 }
 
 // hasDockerCall returns true if any recorded Run call to "docker" contains all the given args.
@@ -438,11 +425,13 @@ func mustSandboxName(agent, workdir string) string {
 	return name
 }
 
-// TestSetup_AllowedDomainsApplied verifies that allowed_domains triggers policy allow calls.
+// TestSetup_AllowedDomainsApplied verifies that allowed_domains triggers a
+// sandbox-scoped policy allow call (sbx 0.29.0+).
 func TestSetup_AllowedDomainsApplied(t *testing.T) {
 	t.Parallel()
 
 	cfg := "[sandbox]\nagent = \"claude\"\nallowed_domains = [\"github.com\", \"proxy.golang.org\"]\n"
+	sandboxName := currentSandboxName()
 
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
@@ -453,6 +442,152 @@ func TestSetup_AllowedDomainsApplied(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.True(t,
-		hasSbxCall(r.RunCalls, "policy", "allow", "network", "github.com,proxy.golang.org"),
-		"expected a single batched policy allow call with both domains")
+		hasSbxCall(r.RunCalls, "policy", "allow", "network", sandboxName, "github.com,proxy.golang.org"),
+		"expected a single batched policy allow call scoped to the sandbox")
+}
+
+// TestSetup_DeniedDomainsApplied is the deny-side symmetry of
+// TestSetup_AllowedDomainsApplied.
+func TestSetup_DeniedDomainsApplied(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\ndenied_domains = [\"ads.example.com\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p))
+
+	assert.True(t,
+		hasSbxCall(r.RunCalls, "policy", "deny", "network", sandboxName, "ads.example.com"),
+		"expected a sandbox-scoped policy deny call")
+}
+
+// TestSetup_BothAllowAndDenyApplied verifies both lists are emitted in a
+// single setup, with allow before deny (deny wins per sbx semantics, but
+// emission order is allow-first for predictable logs).
+func TestSetup_BothAllowAndDenyApplied(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n" +
+		"allowed_domains = [\"github.com\"]\ndenied_domains = [\"ads.example.com\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p))
+
+	allowIdx := indexOfSbxCall(r.RunCalls, "policy", "allow", "network", sandboxName)
+	denyIdx := indexOfSbxCall(r.RunCalls, "policy", "deny", "network", sandboxName)
+
+	require.GreaterOrEqual(t, allowIdx, 0, "expected a policy allow call")
+	require.GreaterOrEqual(t, denyIdx, 0, "expected a policy deny call")
+	assert.Less(t, allowIdx, denyIdx, "allow should be emitted before deny")
+}
+
+// TestSetup_SkipsAllowWhenAllAlreadyInPlace verifies the list-then-diff path:
+// when every configured allowed_domain already appears in the sandbox's
+// existing rules, sbxgo skips the `policy allow network` call entirely.
+func TestSetup_SkipsAllowWhenAllAlreadyInPlace(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\nallowed_domains = [\"github.com\", \"proxy.golang.org\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	configureExistingRules(r, sandboxName, []sbx.PolicyRule{
+		{Decision: "allow", Resource: "github.com"},
+		{Decision: "allow", Resource: "proxy.golang.org"},
+	})
+
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p))
+
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "allow", "network"),
+		"expected no policy allow call when all configured rules are already present")
+}
+
+// TestSetup_AllowOnlyAddsTheDiff verifies that when some configured rules are
+// already in place but others are new, the allow call is invoked with only
+// the missing entries.
+func TestSetup_AllowOnlyAddsTheDiff(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n" +
+		"allowed_domains = [\"github.com\", \"proxy.golang.org\", \"new.example.com\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	configureExistingRules(r, sandboxName, []sbx.PolicyRule{
+		{Decision: "allow", Resource: "github.com"},
+		{Decision: "allow", Resource: "proxy.golang.org"},
+	})
+
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p))
+
+	assert.True(t, hasSbxCall(r.RunCalls, "policy", "allow", "network", sandboxName, "new.example.com"),
+		"expected policy allow to be called with only the new entry")
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "allow", "network", sandboxName,
+		"github.com,proxy.golang.org,new.example.com"),
+		"expected the full configured list NOT to be re-applied")
+}
+
+// TestSetup_DryRunSkipsPolicyCalls is a regression guard: pre-migration the
+// policy path ignored opts.DryRun and would call `sbx policy allow network ...`
+// for real. Dry-run must not mutate any policy state.
+func TestSetup_DryRunSkipsPolicyCalls(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n" +
+		"allowed_domains = [\"github.com\"]\ndenied_domains = [\"ads.example.com\"]\n"
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Setup(context.Background(), sandbox.SetupOptions{DryRun: true}, r, fs, p))
+
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "allow"),
+		"dry-run must not call sbx policy allow")
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "deny"),
+		"dry-run must not call sbx policy deny")
+}
+
+// TestSetup_PolicyAppliedAfterCreate is a regression guard: sbx 0.29.0
+// rejects `policy allow network <sandbox> ...` if the sandbox does not yet
+// exist, so applyPolicy must run *after* `sbx create`.
+func TestSetup_PolicyAppliedAfterCreate(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\nallowed_domains = [\"github.com\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p))
+
+	createIdx := indexOfSbxCall(r.RunCalls, "create")
+	allowIdx := indexOfSbxCall(r.RunCalls, "policy", "allow", "network", sandboxName)
+
+	require.GreaterOrEqual(t, createIdx, 0, "expected an sbx create call")
+	require.GreaterOrEqual(t, allowIdx, 0, "expected a policy allow call")
+	assert.Greater(t, allowIdx, createIdx,
+		"policy allow must run after sbx create (sbx rejects rules for unknown sandboxes)")
 }

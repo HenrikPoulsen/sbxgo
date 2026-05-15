@@ -97,7 +97,8 @@ func TestCurrentPolicy_Balanced(t *testing.T) {
 	t.Parallel()
 
 	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"}, []byte("Current default policy: balanced\n"))
+	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"},
+		[]byte("Current default policy: balanced\n"))
 
 	client := sbx.NewClient(fake)
 	policy, err := client.CurrentPolicy(context.Background())
@@ -106,37 +107,15 @@ func TestCurrentPolicy_Balanced(t *testing.T) {
 	assert.Equal(t, "balanced", policy)
 }
 
-func TestCurrentPolicy_AllowAll(t *testing.T) {
-	t.Parallel()
-
-	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"}, []byte("policy: allow-all"))
-
-	client := sbx.NewClient(fake)
-	policy, err := client.CurrentPolicy(context.Background())
-
-	require.NoError(t, err)
-	assert.Equal(t, "allow-all", policy)
-}
-
-func TestCurrentPolicy_DenyAll(t *testing.T) {
-	t.Parallel()
-
-	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"}, []byte("deny-all (locked down)"))
-
-	client := sbx.NewClient(fake)
-	policy, err := client.CurrentPolicy(context.Background())
-
-	require.NoError(t, err)
-	assert.Equal(t, "deny-all", policy)
-}
-
+// TestCurrentPolicy_Unknown covers the issue-#126 case: `policy ls` may not
+// surface the default-* row at all. parsePolicy returns "" so callers stay
+// silent rather than nag with a useless "unknown" warning.
 func TestCurrentPolicy_Unknown(t *testing.T) {
 	t.Parallel()
 
 	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"}, []byte("no policy set"))
+	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"},
+		[]byte("local:abc  network  local  allow  active  example.com\n"))
 
 	client := sbx.NewClient(fake)
 	policy, err := client.CurrentPolicy(context.Background())
@@ -209,18 +188,48 @@ func TestListSecrets_NoneFound(t *testing.T) {
 	assert.Empty(t, secrets)
 }
 
-func TestSetDefaultPolicy_SendsCorrectCommand(t *testing.T) {
+// TestListSandboxRules_ParsesAllowAndDenyAndContinuations covers the three
+// row shapes parseSandboxRules has to handle: a single-resource allow row,
+// a deny row, and a multi-resource rule whose extra resources appear on
+// continuation lines (indented, no NAME/TYPE/ORIGIN columns).
+func TestListSandboxRules_ParsesAllowAndDenyAndContinuations(t *testing.T) {
+	t.Parallel()
+
+	output := `NAME                                         TYPE      ORIGIN                 DECISION   STATUS   RESOURCES
+local:abc                                    network   local                  allow      active   github.com
+local:def                                    network   local                  deny       active   ads.example.com
+kit:claude-sbxgo                             network   sandbox:claude-sbxgo   allow      active   api.github.com
+                                                                                                  proxy.golang.org
+`
+
+	fake := runner.NewFakeRunner()
+	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "claude-sbxgo"}, []byte(output))
+
+	client := sbx.NewClient(fake)
+	rules, err := client.ListSandboxRules(context.Background(), "claude-sbxgo")
+
+	require.NoError(t, err)
+	assert.Equal(t, []sbx.PolicyRule{
+		{Decision: "allow", Resource: "github.com"},
+		{Decision: "deny", Resource: "ads.example.com"},
+		{Decision: "allow", Resource: "api.github.com"},
+		{Decision: "allow", Resource: "proxy.golang.org"},
+	}, rules)
+}
+
+// TestListSandboxRules_EmptyOutput defends against the "no rules apply"
+// case: empty stdout (or just a header row) must yield a nil/empty slice.
+func TestListSandboxRules_EmptyOutput(t *testing.T) {
 	t.Parallel()
 
 	fake := runner.NewFakeRunner()
-	client := sbx.NewClient(fake)
+	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "claude-sbxgo"}, []byte(""))
 
-	err := client.SetDefaultPolicy(context.Background(), "deny-all")
+	client := sbx.NewClient(fake)
+	rules, err := client.ListSandboxRules(context.Background(), "claude-sbxgo")
 
 	require.NoError(t, err)
-	require.Len(t, fake.RunCalls, 1)
-	assert.Equal(t, "sbx", fake.RunCalls[0].Name)
-	assert.Equal(t, []string{policyGroup, "set-default", "deny-all"}, fake.RunCalls[0].Args)
+	assert.Empty(t, rules)
 }
 
 func TestAllowNetwork_SingleDomain(t *testing.T) {
@@ -229,11 +238,13 @@ func TestAllowNetwork_SingleDomain(t *testing.T) {
 	fake := runner.NewFakeRunner()
 	client := sbx.NewClient(fake)
 
-	err := client.AllowNetwork(context.Background(), "github.com")
+	err := client.AllowNetwork(context.Background(), "claude-myproject", "github.com")
 
 	require.NoError(t, err)
 	require.Len(t, fake.RunCalls, 1)
-	assert.Equal(t, []string{policyGroup, "allow", "network", "github.com"}, fake.RunCalls[0].Args)
+	assert.Equal(t,
+		[]string{policyGroup, "allow", "network", "claude-myproject", "github.com"},
+		fake.RunCalls[0].Args)
 }
 
 func TestAllowNetwork_BatchesIntoOneCall(t *testing.T) {
@@ -242,12 +253,12 @@ func TestAllowNetwork_BatchesIntoOneCall(t *testing.T) {
 	fake := runner.NewFakeRunner()
 	client := sbx.NewClient(fake)
 
-	err := client.AllowNetwork(context.Background(), "github.com", "proxy.golang.org")
+	err := client.AllowNetwork(context.Background(), "claude-myproject", "github.com", "proxy.golang.org")
 
 	require.NoError(t, err)
 	require.Len(t, fake.RunCalls, 1)
 	assert.Equal(t,
-		[]string{policyGroup, "allow", "network", "github.com,proxy.golang.org"},
+		[]string{policyGroup, "allow", "network", "claude-myproject", "github.com,proxy.golang.org"},
 		fake.RunCalls[0].Args)
 }
 
@@ -257,8 +268,8 @@ func TestAllowNetwork_EmptyIsNoOp(t *testing.T) {
 	fake := runner.NewFakeRunner()
 	client := sbx.NewClient(fake)
 
-	require.NoError(t, client.AllowNetwork(context.Background()))
-	assert.Empty(t, fake.RunCalls)
+	require.NoError(t, client.AllowNetwork(context.Background(), "claude-myproject"))
+	assert.Empty(t, fake.RunCalls, "empty domains must not invoke sbx")
 }
 
 func TestDenyNetwork_BatchesIntoOneCall(t *testing.T) {
@@ -267,13 +278,23 @@ func TestDenyNetwork_BatchesIntoOneCall(t *testing.T) {
 	fake := runner.NewFakeRunner()
 	client := sbx.NewClient(fake)
 
-	err := client.DenyNetwork(context.Background(), "evil.com", "ads.example.com")
+	err := client.DenyNetwork(context.Background(), "claude-myproject", "evil.com", "ads.example.com")
 
 	require.NoError(t, err)
 	require.Len(t, fake.RunCalls, 1)
 	assert.Equal(t,
-		[]string{policyGroup, "deny", "network", "evil.com,ads.example.com"},
+		[]string{policyGroup, "deny", "network", "claude-myproject", "evil.com,ads.example.com"},
 		fake.RunCalls[0].Args)
+}
+
+func TestDenyNetwork_EmptyIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	fake := runner.NewFakeRunner()
+	client := sbx.NewClient(fake)
+
+	require.NoError(t, client.DenyNetwork(context.Background(), "claude-myproject"))
+	assert.Empty(t, fake.RunCalls)
 }
 
 func TestRemove_SendsCorrectCommand(t *testing.T) {

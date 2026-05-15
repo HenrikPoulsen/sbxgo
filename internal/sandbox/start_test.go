@@ -8,6 +8,7 @@ import (
 	"github.com/HenrikPoulsen/sbxgo/internal/prompt"
 	"github.com/HenrikPoulsen/sbxgo/internal/runner"
 	"github.com/HenrikPoulsen/sbxgo/internal/sandbox"
+	"github.com/HenrikPoulsen/sbxgo/internal/sbx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -266,6 +267,68 @@ func TestStart_DriftDryRunDoesNotPrompt(t *testing.T) {
 	assert.Empty(t, p.Calls, "expected no prompt in dry-run mode")
 	assert.Equal(t, staleState, fs.Files[sandbox.CreateStateFile],
 		"expected create-state file to be left untouched in dry-run")
+}
+
+// TestStart_ResumeAppliesPolicy verifies that allowed_domains in config triggers
+// a sandbox-scoped policy allow call on the resume path (not only on first create).
+func TestStart_ResumeAppliesPolicy(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\nallowed_domains = [\"github.com\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p))
+
+	assert.True(t,
+		hasSbxCall(r.RunCalls, "policy", "allow", "network", sandboxName, "github.com"),
+		"expected sandbox-scoped policy allow on resume, not only on create")
+}
+
+// TestStart_ResumeSkipsAllowWhenAlreadyInPlace verifies that on resume, if the
+// configured allowed_domain is already an active rule for this sandbox, we
+// skip the `policy allow network` call (quiet no-op).
+func TestStart_ResumeSkipsAllowWhenAlreadyInPlace(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\nallowed_domains = [\"github.com\"]\n"
+	sandboxName := currentSandboxName()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newRunnerWithExistingSandbox()
+	configureExistingRules(r, sandboxName, []sbx.PolicyRule{
+		{Decision: "allow", Resource: "github.com"},
+	})
+
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p))
+
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "allow", "network"),
+		"resume must skip policy allow when the rule is already in place")
+}
+
+// TestStart_DryRunSkipsPolicyCalls confirms dry-run on the resume path does
+// not actually call sbx policy allow/deny.
+func TestStart_DryRunSkipsPolicyCalls(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\nallowed_domains = [\"github.com\"]\n"
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{DryRun: true}, r, fs, p))
+
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "allow"),
+		"dry-run must not call sbx policy allow on resume")
 }
 
 // TestStart_NoDriftWhenConfigUnchanged verifies that a matching state hash skips the prompt.

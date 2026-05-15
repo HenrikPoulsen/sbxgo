@@ -58,10 +58,6 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 		return err
 	}
 
-	if err := applyPolicy(ctx, sbxClient, &cfg.Sandbox); err != nil {
-		return err
-	}
-
 	if err := checkSecrets(ctx, sbxClient, cfg.Sandbox.RequiredSecrets); err != nil {
 		return err
 	}
@@ -94,6 +90,11 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 
 	if opts.DryRun {
 		fmt.Printf("Would run: sbx create %s\n", strings.Join(runArgs, " "))
+
+		if err := applyPolicy(ctx, sbxClient, sandboxName, &cfg.Sandbox, true); err != nil {
+			return err
+		}
+
 		fmt.Printf("Would run: sbx run %s\n", sandboxName)
 
 		return nil
@@ -106,6 +107,10 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 	}
 
 	if err := writeCreateState(cfg, fs); err != nil {
+		return err
+	}
+
+	if err := applyPolicy(ctx, sbxClient, sandboxName, &cfg.Sandbox, false); err != nil {
 		return err
 	}
 
