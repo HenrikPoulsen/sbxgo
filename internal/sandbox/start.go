@@ -108,7 +108,7 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 	}
 
 	if !hasState {
-		// Sandbox predates drift detection — record current state silently
+		// Sandbox predates drift detection; record current state silently
 		// so future changes are detected. Skip on dry-run.
 		if !opts.DryRun {
 			if err := writeCreateState(cfg, fs); err != nil {
@@ -126,18 +126,18 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 	hasDocker := cfg.Sandbox.Docker != nil
 
 	if opts.DryRun {
-		fmt.Println("Configuration drift detected (docker source, branch, or extra_workspaces changed); " +
-			"would prompt to recreate sandbox.")
+		fmt.Println("Configuration drift detected (docker source, branch, extra_workspaces, or kit contents " +
+			"changed); would prompt to recreate sandbox.")
 
 		return false, nil
 	}
 
 	fmt.Println("Configuration affecting sandbox creation has changed since this sandbox was created.")
-	fmt.Println("(Affected fields: docker source, branch, extra_workspaces.)")
+	fmt.Println("(Affected fields: docker source, branch, extra_workspaces, kits.)")
 
 	if hasDocker {
 		fmt.Println("NOTE: a docker source is configured. If the image or Dockerfile changed, run `sbxgo setup` " +
-			"instead — `sbxgo run` will recreate the sandbox using the previously loaded template and " +
+			"instead; `sbxgo run` will recreate the sandbox using the previously loaded template and " +
 			"will not rebuild or re-pull.")
 	}
 
@@ -154,9 +154,11 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 	return true, nil
 }
 
-// resumeSandbox resumes an existing sandbox, re-applying configured policy
-// rules and kits first so config.toml changes take effect without recreating
-// the sandbox. Prints a dry-run message if applicable.
+// resumeSandbox resumes an existing sandbox, applying any configured policy
+// rules that are not already in place. Kits are NOT re-applied on resume:
+// they're tracked by the drift hash, so a kit change prompts a recreate
+// instead of running install commands a second time inside a live sandbox
+// (which races with apt locks, overlays files, etc.).
 func resumeSandbox(
 	ctx context.Context,
 	opts StartOptions,
@@ -172,19 +174,6 @@ func resumeSandbox(
 
 	if err := applyPolicy(ctx, sbxClient, sandboxName, &cfg.Sandbox, opts.DryRun); err != nil {
 		return err
-	}
-
-	for _, kit := range cfg.Sandbox.Kits {
-		if opts.DryRun {
-			fmt.Printf("Would run: sbx kit add %s %s\n", sandboxName, kit)
-			continue
-		}
-
-		fmt.Printf("Applying kit '%s'\n", kit)
-
-		if err := sbxClient.AddKit(ctx, sandboxName, kit); err != nil {
-			return eris.Wrapf(err, "applying kit %q to sandbox %q", kit, sandboxName)
-		}
 	}
 
 	if opts.DryRun {

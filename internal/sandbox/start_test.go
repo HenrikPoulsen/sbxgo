@@ -119,42 +119,55 @@ func TestStart_WithKits(t *testing.T) {
 		"expected kit URL passed to sbx create")
 }
 
-// TestStart_ResumeAppliesKits verifies that kits configured in config.toml are re-applied
-// via `sbx kit add` when resuming an existing sandbox.
-func TestStart_ResumeAppliesKits(t *testing.T) {
+// TestStart_ResumeDoesNotReApplyKits is a regression guard: resume must
+// never call `sbx kit add`. Kits are applied at sandbox creation only;
+// content changes flow through the drift recreate prompt instead.
+func TestStart_ResumeDoesNotReApplyKits(t *testing.T) {
 	t.Parallel()
 
 	cfg := "[sandbox]\nagent = \"claude\"\nkits = [\".sbxgo/kits/go-tools\"]\n"
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	// Seed kit content so the drift hash matches once written.
+	fs.Files[".sbxgo/kits/go-tools/spec.yaml"] = []byte("schemaVersion: \"1\"\n")
 	r := newRunnerWithExistingSandbox()
 	p := prompt.NewFakePrompter(false)
 
-	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p))
 
-	require.NoError(t, err)
-	assert.True(t, hasSbxCall(r.RunCalls, "kit", "add", sandboxName, ".sbxgo/kits/go-tools"),
-		"expected sbx kit add to apply configured kit on resume")
+	assert.False(t, hasSbxCall(r.RunCalls, "kit", "add"),
+		"resume must never re-apply kits; that runs apt installs against a live sandbox")
 	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName),
-		"expected sbx run to resume existing sandbox after applying kits")
+		"expected sbx run to resume the existing sandbox")
 }
 
-// TestStart_DryRun_ResumeSkipsKitAdd verifies that dry-run does not actually call sbx kit add.
-func TestStart_DryRun_ResumeSkipsKitAdd(t *testing.T) {
+// TestStart_KitContentChangeTriggersDriftPrompt verifies the central behaviour
+// of this design: when the contents of a configured kit change between runs,
+// the drift detector treats it the same as a docker source or branch change
+// and prompts the user to recreate.
+func TestStart_KitContentChangeTriggersDriftPrompt(t *testing.T) {
 	t.Parallel()
 
-	cfg := "[sandbox]\nagent = \"claude\"\nkits = [\".sbxgo/kits/go-tools\"]\n"
+	cfg := "[sandbox]\nagent = \"claude\"\nkits = [\".sbxgo/kits/tools\"]\n"
+	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	fs.Files[".sbxgo/kits/tools/spec.yaml"] = []byte("schemaVersion: \"1\"\nname: tools\n")
+	// Stale create-state hash that won't match the current kit content.
+	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
+
 	r := newRunnerWithExistingSandbox()
-	p := prompt.NewFakePrompter(false)
+	p := prompt.NewFakePrompter(true) // user confirms recreate
 
-	err := sandbox.Start(context.Background(), sandbox.StartOptions{DryRun: true}, r, fs, p)
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p))
 
-	require.NoError(t, err)
-	assert.False(t, hasSbxCall(r.RunCalls, "kit", "add"),
-		"expected no actual sbx kit add in dry-run mode")
+	require.NotEmpty(t, p.Calls, "expected drift recreate prompt")
+	assert.Contains(t, p.Calls[0], "Recreate")
+	assert.True(t, hasSbxCall(r.RunCalls, "rm", "--force", sandboxName),
+		"expected sandbox to be removed before recreate")
+	assert.True(t, hasSbxCall(r.RunCalls, "--kit", ".sbxgo/kits/tools"),
+		"expected new sandbox to be created with the kit, applying its current contents")
 }
 
 // TestStart_WarnsMissingRequiredSecret verifies that a warning is printed but the command proceeds
@@ -174,7 +187,7 @@ func TestStart_WarnsMissingRequiredSecret(t *testing.T) {
 
 	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
 
-	// Should succeed despite missing secret — it only warns
+	// Should succeed despite missing secret; it only warns
 	require.NoError(t, err)
 	assert.True(t, hasSbxCall(r.RunCalls, "run"), "expected sandbox creation despite missing secret")
 }

@@ -35,7 +35,7 @@ sbxgo run --dry-run
 
 ## Architecture
 
-Single entry point in `cmd/sbxgo` is a cobra root command with two subcommands (`setup` and `run`) that delegate to `internal/sandbox.Setup()` and `internal/sandbox.Start()` respectively. The CLI command `run` maps to the internal `Start` function — they are synonymous (start/resume the sandbox).
+Single entry point in `cmd/sbxgo` is a cobra root command with two subcommands (`setup` and `run`) that delegate to `internal/sandbox.Setup()` and `internal/sandbox.Start()` respectively. The CLI command `run` maps to the internal `Start` function; they are synonymous (start/resume the sandbox).
 
 All external calls go through interfaces injected at the top level:
 - `runner.CommandRunner`: wraps `exec.Cmd`; `runner.NewFakeRunner()` for tests
@@ -54,9 +54,9 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 
 ## External references
 
-- **Releases & issue tracker**: https://github.com/docker/sbx-releases — check here for new sbx versions and to see if a problem you hit has already been reported.
-- **Docs**: https://docs.docker.com/ai/sandboxes/ — official documentation for Docker Sandboxes (the `sbx` CLI).
-- **Always verify sbx CLI usage**: before adding or changing how this project invokes `sbx`, run `sbx <command> --help` and confirm flag names, positions, and semantics. Do not rely on memory — the CLI evolves between releases.
+- **Releases & issue tracker**: https://github.com/docker/sbx-releases, check here for new sbx versions and to see if a problem you hit has already been reported.
+- **Docs**: https://docs.docker.com/ai/sandboxes/, official documentation for Docker Sandboxes (the `sbx` CLI).
+- **Always verify sbx CLI usage**: before adding or changing how this project invokes `sbx`, run `sbx <command> --help` and confirm flag names, positions, and semantics. Do not rely on memory, since the CLI evolves between releases.
 
 ## .sbxgo/config.toml field reference
 
@@ -67,10 +67,10 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 | `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
-| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only — sbxgo never changes the host-wide default; set it with `sbx policy set-default`. |
+| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy set-default`. |
 | `branch` | | | `auto`, a branch name, or omit for direct mode |
 | `required_secrets` | | | Names to check; missing ones warn, do not block |
 | `allowed_domains` | | | Sandbox-scoped allow rules added each run (sbx 0.29.0+). Re-add is idempotent. |
 | `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |
-| `kits` | | | Kit paths passed as `--kit` to `sbx run` |
+| `kits` | | | Kit references applied at `sbx create` only. Content changes are tracked by the drift hash and prompt a recreate on the next `sbxgo run`. |
 | `extra_workspaces` | | | Extra host paths to mount into the sandbox |

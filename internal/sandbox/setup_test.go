@@ -367,7 +367,7 @@ dockerfile = ".sbxgo/Dockerfile"
 
 	require.NoError(t, err)
 	assert.True(t, hasDockerCall(r.RunCalls, "build"),
-		"docker build still runs — caching is up to docker, not sbxgo")
+		"docker build still runs; caching is up to docker, not sbxgo")
 	assert.False(t, hasDockerCall(r.RunCalls, "save"),
 		"expected no docker save when image ID is unchanged")
 	assert.False(t, hasSbxCall(r.RunCalls, "template", "load"),

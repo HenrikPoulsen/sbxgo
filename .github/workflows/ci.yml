@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
   # Lets you re-run the full pipeline by hand from the Actions tab. Useful when
-  # goreleaser fails after semantic-release has already created a release —
+  # goreleaser fails after semantic-release has already created a release -
   # triggering this on `main` re-attempts the release on the same commit
   # (goreleaser's `release.mode: keep-existing` preserves the body).
   workflow_dispatch:

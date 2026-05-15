@@ -22,7 +22,7 @@ import (
 //
 // This keeps the user-facing log quiet on the common no-op case ("all in
 // place") and lets sbx print its own per-resource confirmation when there
-// is real work to do. The sandbox must already exist — `sbx policy allow
+// is real work to do. The sandbox must already exist, since `sbx policy allow
 // network <sandbox> ...` rejects unknown names.
 func applyPolicy(
 	ctx context.Context,
@@ -119,7 +119,7 @@ func diffRules(configured []string, existing []sbx.PolicyRule, decision string) 
 
 // warnIfHostDefaultDiffers prints a WARNING (to stderr) when the host-wide
 // default network policy differs from the one configured for this project.
-// sbxgo never changes the host default — that's a user choice — but a
+// sbxgo never changes the host default (that's a user choice), but a
 // mismatch is almost always a misconfiguration worth surfacing.
 //
 // The check is best-effort: when the active default cannot be parsed from
@@ -136,7 +136,7 @@ func warnIfHostDefaultDiffers(ctx context.Context, client *sbx.Client, desired s
 		"WARNING: network_policy is %q but the host-wide default is %q.\n"+
 			"         sbxgo does not change the host default automatically. To change it:\n"+
 			"             sbx policy set-default %s\n"+
-			"         (use `sbx policy reset` first if you want a clean slate — it wipes\n"+
+			"         (use `sbx policy reset` first if you want a clean slate; it wipes\n"+
 			"         every rule, global AND sandbox-scoped, across all sandboxes.)\n",
 		desired, current, desired)
 }
