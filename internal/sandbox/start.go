@@ -101,61 +101,84 @@ func Start(
 	return createSandbox(ctx, opts, cfg, fs, sbxClient, sandboxName)
 }
 
-// handleDrift checks whether create-time configuration has changed since the
-// sandbox was created and, if so, prompts the user to recreate. Returns true
-// if the user confirmed recreation. In dry-run mode, drift is reported but
-// no recreate is performed.
+// handleDrift prompts the user to recreate the sandbox when either:
+//   - the stored create-state hash disagrees with the current config (real drift), or
+//   - no create-state file exists at all (sandbox may pre-date sbxgo or have
+//     been created outside it — we can't verify it matches the config).
+//
+// Returns true if the user confirmed recreation. The prompt defaults to NO so
+// declining is the safe choice — the user can opt in to recreate by typing
+// "y". On dry-run, the relevant message is printed and no prompt fires.
 func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p prompt.Prompter) (bool, error) {
 	drifted, hasState, err := checkDrift(cfg, fs)
 	if err != nil {
 		return false, err
 	}
 
-	if !hasState {
-		// Sandbox predates drift detection — record current state silently
-		// so future changes are detected. Skip on dry-run.
-		if !opts.DryRun {
-			if err := writeCreateState(cfg, fs); err != nil {
-				return false, err
-			}
+	// Happy path: state file exists and matches.
+	if hasState && !drifted {
+		return false, nil
+	}
+
+	if opts.DryRun {
+		if hasState {
+			fmt.Println("Configuration drift detected (docker source, branch, or extra_workspaces changed); " +
+				"would prompt to recreate sandbox.")
+		} else {
+			fmt.Println("Existing sandbox has no sbxgo state file; would prompt to recreate.")
 		}
 
 		return false, nil
 	}
 
-	if !drifted {
-		return false, nil
-	}
+	question := driftPromptMessage(hasState, cfg.Sandbox.Docker != nil)
 
-	hasDocker := cfg.Sandbox.Docker != nil
-
-	if opts.DryRun {
-		fmt.Println("Configuration drift detected (docker source, branch, or extra_workspaces changed); " +
-			"would prompt to recreate sandbox.")
-
-		return false, nil
-	}
-
-	fmt.Println("Configuration affecting sandbox creation has changed since this sandbox was created.")
-	fmt.Println("(Affected fields: docker source, branch, extra_workspaces.)")
-
-	if hasDocker {
-		fmt.Println("NOTE: a docker source is configured. If the image or Dockerfile changed, run `sbxgo setup` " +
-			"instead — `sbxgo run` will recreate the sandbox using the previously loaded template and " +
-			"will not rebuild or re-pull.")
-	}
-
-	confirmed, err := p.Confirm("Recreate sandbox now? This discards any in-sandbox state.", false)
+	confirmed, err := p.Confirm(question, false)
 	if err != nil {
 		return false, eris.Wrap(err, "reading confirmation")
 	}
 
-	if !confirmed {
-		fmt.Fprintln(os.Stderr, "WARNING: continuing with existing sandbox; new configuration will not take effect until recreated.")
-		return false, nil
+	if confirmed {
+		return true, nil
 	}
 
-	return true, nil
+	// User declined. For the stateless case, record current state so we don't
+	// prompt again on the next run. For the drift case, we leave the stored
+	// state alone so the prompt fires again next time.
+	if !hasState {
+		if err := writeCreateState(cfg, fs); err != nil {
+			return false, err
+		}
+	}
+
+	fmt.Fprintln(os.Stderr,
+		"WARNING: continuing with existing sandbox; new configuration will not take effect until recreated.")
+
+	return false, nil
+}
+
+// driftPromptMessage prints the lead-in explanation for handleDrift and
+// returns the yes/no question to ask the user. Splitting the message out
+// keeps handleDrift readable.
+func driftPromptMessage(hasState, hasDocker bool) string {
+	if hasState {
+		fmt.Println("Configuration affecting sandbox creation has changed since this sandbox was created.")
+		fmt.Println("(Affected fields: docker source, branch, extra_workspaces.)")
+
+		if hasDocker {
+			fmt.Println("NOTE: a docker source is configured. If the image or Dockerfile changed, run `sbxgo setup` " +
+				"instead — `sbxgo run` will recreate the sandbox using the previously loaded template and " +
+				"will not rebuild or re-pull.")
+		}
+
+		return "Recreate sandbox now? This discards any in-sandbox state."
+	}
+
+	fmt.Println("Found an existing sandbox but no .sbxgo/.create-state file.")
+	fmt.Println("sbxgo can't verify it matches the current config " +
+		"(it may pre-date this sbxgo migration or have been created manually).")
+
+	return "Recreate sandbox from this config? This discards any in-sandbox state."
 }
 
 // resumeSandbox resumes an existing sandbox, re-applying any configured kits first

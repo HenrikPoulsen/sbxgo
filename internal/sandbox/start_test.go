@@ -178,25 +178,56 @@ func TestStart_WarnsMissingRequiredSecret(t *testing.T) {
 	assert.True(t, hasSbxCall(r.RunCalls, "run"), "expected sandbox creation despite missing secret")
 }
 
-// TestStart_DriftRecordsStateForLegacySandbox verifies that resuming a sandbox without a
-// create-state file silently records the current state and proceeds (graceful upgrade path).
-func TestStart_DriftRecordsStateForLegacySandbox(t *testing.T) {
+// TestStart_StatelessSandbox_DeclinePromptResumes verifies that an existing
+// sandbox without a create-state file triggers a recreate prompt; declining
+// it records state for next time and resumes normally.
+func TestStart_StatelessSandbox_DeclinePromptResumes(t *testing.T) {
 	t.Parallel()
 
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
 	r := newRunnerWithExistingSandbox()
-	p := prompt.NewFakePrompter(false)
+	p := prompt.NewFakePrompter(false) // user declines
 
 	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
 
 	require.NoError(t, err)
-	assert.Empty(t, p.Calls, "expected no prompt for sandbox without prior state")
+	require.Len(t, p.Calls, 1, "expected prompt about stateless sandbox")
+	assert.False(t, p.Defaults[0], "prompt should default to no")
 
 	_, hasState := fs.Files[sandbox.CreateStateFile]
-	assert.True(t, hasState, "expected create-state file to be written for legacy sandbox")
-	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName), "expected resume to proceed")
+	assert.True(t, hasState, "expected create-state file to be written so next run is silent")
+	assert.False(t, hasSbxCall(r.RunCalls, "rm", "--force", sandboxName),
+		"expected no removal when user declines")
+	assert.False(t, hasSbxCall(r.RunCalls, "create"),
+		"expected no creation when user declines")
+	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName),
+		"expected resume to proceed after decline")
+}
+
+// TestStart_StatelessSandbox_ConfirmRecreates verifies that confirming the
+// stateless-sandbox prompt removes the existing sandbox and creates a fresh
+// one from the config.
+func TestStart_StatelessSandbox_ConfirmRecreates(t *testing.T) {
+	t.Parallel()
+
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(true) // user confirms
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.NoError(t, err)
+	require.Len(t, p.Calls, 1)
+	assert.True(t, hasSbxCall(r.RunCalls, "rm", "--force", sandboxName),
+		"expected sandbox to be removed before recreate")
+	assert.True(t, hasSbxCall(r.RunCalls, "create", "claude", "."),
+		"expected fresh sandbox to be created from config")
+	assert.True(t, hasSbxCall(r.RunCalls, "run", sandboxName),
+		"expected agent to be started in the new sandbox")
 }
 
 // TestStart_DriftPromptsAndRecreatesOnConfirm verifies that a drifted config prompts the user
@@ -268,27 +299,28 @@ func TestStart_DriftDryRunDoesNotPrompt(t *testing.T) {
 		"expected create-state file to be left untouched in dry-run")
 }
 
-// TestStart_NoDriftWhenConfigUnchanged verifies that a matching state hash skips the prompt.
+// TestStart_NoDriftWhenConfigUnchanged verifies that once state is recorded,
+// subsequent runs with the same config don't prompt.
 func TestStart_NoDriftWhenConfigUnchanged(t *testing.T) {
 	t.Parallel()
 
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
+
+	// First call: existing sandbox, no state → prompts. Declining records state.
 	r := newRunnerWithExistingSandbox()
-	p := prompt.NewFakePrompter(true)
-
-	// First call writes the state for this config.
+	p := prompt.NewFakePrompter(false)
 	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p))
-	require.Empty(t, p.Calls, "first call should record state without prompting")
+	require.Len(t, p.Calls, 1, "first call should prompt about stateless sandbox")
 
-	// Second call with the same config should not prompt.
+	// Second call with the same config: state now matches, no prompt.
 	r2 := newRunnerWithExistingSandbox()
-	p2 := prompt.NewFakePrompter(true)
+	p2 := prompt.NewFakePrompter(false)
 
 	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r2, fs, p2)
 	require.NoError(t, err)
-	assert.Empty(t, p2.Calls, "expected no drift prompt when config unchanged")
+	assert.Empty(t, p2.Calls, "expected no prompt when config matches recorded state")
 	assert.True(t, hasSbxCall(r2.RunCalls, "run", sandboxName),
 		"expected sandbox to be resumed normally")
 }
