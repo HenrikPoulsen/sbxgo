@@ -88,13 +88,13 @@ func Start(
 				return eris.Wrapf(err, "removing sandbox %q for recreate", sandboxName)
 			}
 
-			return createSandbox(ctx, opts, cfg, fs, sbxClient, sandboxName)
+			return createSandbox(ctx, opts, cfg, fs, p, sbxClient, sandboxName)
 		}
 
 		return resumeSandbox(ctx, opts, cfg, sbxClient, sandboxName)
 	}
 
-	return createSandbox(ctx, opts, cfg, fs, sbxClient, sandboxName)
+	return createSandbox(ctx, opts, cfg, fs, p, sbxClient, sandboxName)
 }
 
 // handleDrift checks whether create-time configuration has changed since the
@@ -189,11 +189,15 @@ func resumeSandbox(
 }
 
 // createSandbox creates a new sandbox from config, warning if the template is not built.
+// After create + policy apply, the user is prompted before the agent attaches
+// so create output (kit installs, etc.) is readable before `sbx run` clears
+// the terminal, matching `sbxgo setup`'s behavior.
 func createSandbox(
 	ctx context.Context,
 	opts StartOptions,
 	cfg *config.Config,
 	fs fsutil.FileSystem,
+	p prompt.Prompter,
 	sbxClient *sbx.Client,
 	sandboxName string,
 ) error {
@@ -240,9 +244,5 @@ func createSandbox(
 		return err
 	}
 
-	if err := sbxClient.Run(ctx, sandboxName); err != nil {
-		return eris.Wrapf(err, "starting agent in sandbox %q", sandboxName)
-	}
-
-	return nil
+	return maybeAttachAgent(ctx, p, false, sbxClient, sandboxName)
 }

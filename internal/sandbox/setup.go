@@ -114,7 +114,7 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 		return err
 	}
 
-	return maybeAttachAgent(ctx, opts, p, sbxClient, sandboxName)
+	return maybeAttachAgent(ctx, p, opts.Force, sbxClient, sandboxName)
 }
 
 // prepareConfig handles the pre-flight: in dry-run mode, it just checks
@@ -157,16 +157,18 @@ func prepareConfig(opts SetupOptions, fs fsutil.FileSystem, p prompt.Prompter) (
 	return false, nil
 }
 
-// maybeAttachAgent prompts the user to attach the agent (unless --force was
-// set, in which case it attaches unconditionally) and runs sbx run if so.
+// maybeAttachAgent prompts the user to attach the agent (unless force is set,
+// in which case it attaches unconditionally) and runs sbx run if so. Shared
+// between `sbxgo setup` and the create paths in `sbxgo run` so both flows
+// give the user a chance to read create output before the terminal is cleared.
 func maybeAttachAgent(
 	ctx context.Context,
-	opts SetupOptions,
 	p prompt.Prompter,
+	force bool,
 	sbxClient *sbx.Client,
 	sandboxName string,
 ) error {
-	if !opts.Force {
+	if !force {
 		start, err := p.Confirm("Sandbox created. Start the agent now? (this will clear the terminal)", true)
 		if err != nil {
 			return eris.Wrap(err, "reading confirmation")
