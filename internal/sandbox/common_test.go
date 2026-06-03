@@ -14,9 +14,8 @@ const (
 	agentCopilot = "copilot"
 	kitGo        = ".sbxgo/kits/go"
 	kitNode      = ".sbxgo/kits/node"
-	branchAuto   = "auto"
 	flagKit      = "--kit"
-	flagBranch   = "--branch"
+	flagClone    = "--clone"
 	flagTemplate = "--template"
 	templateName = "claude-myproject"
 )
@@ -100,13 +99,13 @@ func TestBuildRunArgs_WithKits(t *testing.T) {
 	assert.Equal(t, []string{flagKit, kitGo, flagKit, kitNode, agentClaude, "."}, args)
 }
 
-func TestBuildRunArgs_WithBranch(t *testing.T) {
+func TestBuildRunArgs_WithClone(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.SandboxConfig{Agent: agentClaude, Branch: branchAuto}
+	cfg := &config.SandboxConfig{Agent: agentClaude, Clone: true}
 	args := sandbox.BuildRunArgs(cfg, false, "")
 
-	assert.Equal(t, []string{flagBranch, branchAuto, agentClaude, "."}, args)
+	assert.Equal(t, []string{flagClone, agentClaude, "."}, args)
 }
 
 func TestBuildRunArgs_WithExtraWorkspaces(t *testing.T) {
@@ -127,7 +126,7 @@ func TestBuildRunArgs_FullOptions(t *testing.T) {
 	cfg := &config.SandboxConfig{
 		Agent:           agentClaude,
 		Kits:            []string{kitGo},
-		Branch:          branchAuto,
+		Clone:           true,
 		ExtraWorkspaces: []string{"/extra"},
 	}
 	args := sandbox.BuildRunArgs(cfg, true, templateName)
@@ -135,7 +134,7 @@ func TestBuildRunArgs_FullOptions(t *testing.T) {
 	assert.Equal(t, []string{
 		flagTemplate, templateName,
 		flagKit, kitGo,
-		flagBranch, branchAuto,
+		flagClone,
 		agentClaude, ".",
 		"/extra",
 	}, args)

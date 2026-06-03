@@ -221,10 +221,10 @@ func TestStart_DriftRecordsStateForLegacySandbox(t *testing.T) {
 func TestStart_DriftPromptsAndRecreatesOnConfirm(t *testing.T) {
 	t.Parallel()
 
-	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	cfgWithClone := "[sandbox]\nagent = \"claude\"\nclone = true\n"
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithClone)
 	// Stale state hash that will not match the current config.
 	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash-from-previous-config\n")
 	r := newRunnerWithExistingSandbox()
@@ -237,8 +237,8 @@ func TestStart_DriftPromptsAndRecreatesOnConfirm(t *testing.T) {
 	assert.Contains(t, p.Calls[0], "Recreate")
 	assert.True(t, hasSbxCall(r.RunCalls, "rm", "--force", sandboxName),
 		"expected sandbox to be removed before recreate")
-	assert.True(t, hasSbxCall(r.RunCalls, "--branch", "feature-x"),
-		"expected new sandbox to be created with the updated branch")
+	assert.True(t, hasSbxCall(r.RunCalls, "--clone"),
+		"expected new sandbox to be created with --clone enabled")
 }
 
 // TestStart_DriftDeclinedKeepsResuming verifies that declining the drift prompt resumes
@@ -246,10 +246,10 @@ func TestStart_DriftPromptsAndRecreatesOnConfirm(t *testing.T) {
 func TestStart_DriftDeclinedKeepsResuming(t *testing.T) {
 	t.Parallel()
 
-	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	cfgWithClone := "[sandbox]\nagent = \"claude\"\nclone = true\n"
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithClone)
 	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
 	r := newRunnerWithExistingSandbox()
 	p := prompt.NewFakePrompter(false) // user declines recreate
@@ -269,9 +269,9 @@ func TestStart_DriftDeclinedKeepsResuming(t *testing.T) {
 func TestStart_DriftDryRunDoesNotPrompt(t *testing.T) {
 	t.Parallel()
 
-	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	cfgWithClone := "[sandbox]\nagent = \"claude\"\nclone = true\n"
 	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithClone)
 	staleState := []byte("stale-hash\n")
 	fs.Files[sandbox.CreateStateFile] = staleState
 	r := newRunnerWithExistingSandbox()

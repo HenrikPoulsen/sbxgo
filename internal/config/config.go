@@ -30,7 +30,7 @@ type SandboxConfig struct {
 	Agent           string        `toml:"agent"`
 	Docker          *DockerConfig `toml:"docker"`
 	NetworkPolicy   NetworkPolicy `toml:"network_policy"`
-	Branch          string        `toml:"branch"`
+	Clone           bool          `toml:"clone"`
 	AllowedDomains  []string      `toml:"allowed_domains"`
 	DeniedDomains   []string      `toml:"denied_domains"`
 	Kits            []string      `toml:"kits"`

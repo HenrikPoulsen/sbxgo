@@ -35,12 +35,11 @@ agent = "{{AGENT}}"
 # what allowed_domains/denied_domains layer on top of.
 network_policy = "deny-all"
 
-# branch: the git branch to check out inside the sandbox.
-# Optional. Values:
-#   auto            sbx picks the current branch
-#   <branch-name>   check out a specific branch
-#   omit/""         direct mode (no branch checkout)
-# branch = "auto"
+# clone: when true, sbx runs in clone mode (`--clone`): the host repo is
+# mounted read-only and the agent works in an in-container clone exposed
+# back to the host as the `sandbox-<name>` git remote. Omit or set false
+# for direct mode (the sandbox writes directly to the mounted workspace).
+# clone = true
 
 # allowed_domains: domains to explicitly allow on top of network_policy.
 # Scoped to this sandbox only (sbx 0.29.0+). sbxgo re-applies on every run;
