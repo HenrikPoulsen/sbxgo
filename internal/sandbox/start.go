@@ -126,14 +126,14 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 	hasDocker := cfg.Sandbox.Docker != nil
 
 	if opts.DryRun {
-		fmt.Println("Configuration drift detected (docker source, branch, extra_workspaces, or kit contents " +
+		fmt.Println("Configuration drift detected (docker source, clone, extra_workspaces, or kit contents " +
 			"changed); would prompt to recreate sandbox.")
 
 		return false, nil
 	}
 
 	fmt.Println("Configuration affecting sandbox creation has changed since this sandbox was created.")
-	fmt.Println("(Affected fields: docker source, branch, extra_workspaces, kits.)")
+	fmt.Println("(Affected fields: docker source, clone, extra_workspaces, kits.)")
 
 	if hasDocker {
 		fmt.Println("NOTE: a docker source is configured. If the image or Dockerfile changed, run `sbxgo setup` " +

@@ -132,7 +132,7 @@ Flags:
 
 On each invocation, `sbxgo run`:
 1. Warns about any missing required secrets
-2. If the sandbox exists, checks for **drift** in create-time config (docker source, branch, extra_workspaces). On drift, prompts to recreate; if you decline, resumes the existing sandbox with a warning that the new config will not take effect until a recreate
+2. If the sandbox exists, checks for **drift** in create-time config (docker source, clone, extra_workspaces). On drift, prompts to recreate; if you decline, resumes the existing sandbox with a warning that the new config will not take effect until a recreate
 3. Resumes the existing sandbox, applying any `allowed_domains` / `denied_domains` rules that are not already in place. Kits are not re-applied on resume; kit content changes are caught by drift detection (step 2) instead
 4. If no sandbox exists, creates one via `sbx create` (which applies all configured kits), then applies sandbox-scoped policy rules, then attaches to the agent
 
@@ -232,7 +232,7 @@ The template written to `.sbxgo/config.toml` by `sbxgo setup` is [config.toml.tm
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
 | `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy set-default`. |
-| `branch` | | | `auto`, a branch name, or omit for direct mode |
+| `clone` | | `false` | When true, pass `--clone` to sbx so the agent works in an in-container clone exposed back as the `sandbox-<name>` git remote (sbx 0.31.0+; replaces the removed `branch` field). |
 | `required_secrets` | | | Secret names to check; missing ones warn, do not block |
 | `allowed_domains` | | | Sandbox-scoped allow rules added on each run (sbx 0.29.0+). Re-add is idempotent. |
 | `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |

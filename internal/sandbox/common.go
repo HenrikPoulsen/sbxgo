@@ -30,7 +30,7 @@ const (
 	ImageIDNewFile = ".sbxgo/.image-id-new"
 	// CreateStateFile stores a hash of the create-time configuration so resume
 	// can detect drift. Only includes fields that cannot be applied to an
-	// existing sandbox (docker source, branch, extra_workspaces).
+	// existing sandbox (docker source, clone, extra_workspaces).
 	CreateStateFile = ".sbxgo/.create-state"
 )
 
@@ -115,8 +115,8 @@ func loadConfig(path string, fs fsutil.FileSystem) (*config.Config, error) {
 func computeCreateStateHash(cfg *config.Config, fs fsutil.FileSystem) (string, error) {
 	h := sha256.New()
 
-	if _, err := fmt.Fprintf(h, "branch:%s\n", cfg.Sandbox.Branch); err != nil {
-		return "", eris.Wrap(err, "hashing branch")
+	if _, err := fmt.Fprintf(h, "clone:%v\n", cfg.Sandbox.Clone); err != nil {
+		return "", eris.Wrap(err, "hashing clone")
 	}
 
 	workspaces := slices.Clone(cfg.Sandbox.ExtraWorkspaces)
@@ -302,8 +302,8 @@ func BuildRunArgs(cfg *config.SandboxConfig, useTemplate bool, templateName stri
 		args = append(args, "--kit", kit)
 	}
 
-	if cfg.Branch != "" {
-		args = append(args, "--branch", cfg.Branch)
+	if cfg.Clone {
+		args = append(args, "--clone")
 	}
 
 	args = append(args, cfg.Agent, ".")

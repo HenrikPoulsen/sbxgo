@@ -14,7 +14,7 @@ const validTOML = `
 [sandbox]
 agent          = "claude"
 network_policy = "deny-all"
-branch         = "auto"
+clone          = true
 
 allowed_domains  = ["proxy.golang.org"]
 denied_domains   = ["evil.com"]
@@ -50,7 +50,7 @@ func TestLoadConfig_Valid(t *testing.T) {
 	assert.Equal(t, ".sbxgo/Dockerfile", cfg.Sandbox.Docker.Build.Dockerfile)
 	assert.Equal(t, ".", cfg.Sandbox.Docker.Build.Context)
 	assert.Equal(t, config.PolicyDenyAll, cfg.Sandbox.NetworkPolicy)
-	assert.Equal(t, "auto", cfg.Sandbox.Branch)
+	assert.True(t, cfg.Sandbox.Clone)
 	assert.Equal(t, []string{"proxy.golang.org"}, cfg.Sandbox.AllowedDomains)
 	assert.Equal(t, []string{"evil.com"}, cfg.Sandbox.DeniedDomains)
 	assert.Equal(t, []string{".sbxgo/kits/go"}, cfg.Sandbox.Kits)
