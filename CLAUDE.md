@@ -73,5 +73,5 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 | `required_secrets` | | | Names to check; missing ones warn, do not block |
 | `allowed_domains` | | | Sandbox-scoped allow rules added each run (sbx 0.29.0+). Re-add is idempotent. |
 | `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |
-| `kits` | | | Kit references applied at `sbx create` only. Content changes are tracked by the drift hash and prompt a recreate on the next `sbxgo run`. |
+| `kits` | | | Kit references applied at `sbx create` only. Content changes are tracked by the drift hash and prompt a recreate on the next `sbxgo run`. Marked experimental upstream as of sbx 0.31.0. |
 | `extra_workspaces` | | | Extra host paths to mount into the sandbox |
