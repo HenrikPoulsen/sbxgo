@@ -218,6 +218,8 @@ Changing a kit's `spec.yaml` or `files/` between runs counts as configuration dr
 
 > **External kits (URL / OCI / ZIP):** the drift check hashes the reference string only, not the remote payload. If the contents at that URL change without the URL changing, sbxgo cannot detect it; bump the version in the reference (or run `sbxgo setup`) to force a recreate. Symlinks inside a local kit's `files/` are similarly skipped from the hash; commit the resolved files instead if their contents need to drive drift.
 
+> **Experimental upstream:** sbx 0.31.0 marked kits as experimental and started emitting verbose errors on failure. Expect the kit API and behaviour to evolve; treat noisy output from `sbx create` when applying kits as informational unless the command actually exits non-zero.
+
 For more information and a collection of ready-made kits, see [docker/sbx-kits-contrib](https://github.com/docker/sbx-kits-contrib).
 
 ---
