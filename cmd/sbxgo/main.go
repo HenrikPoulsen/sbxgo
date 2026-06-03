@@ -14,6 +14,7 @@ import (
 	"github.com/HenrikPoulsen/sbxgo/internal/prompt"
 	"github.com/HenrikPoulsen/sbxgo/internal/runner"
 	"github.com/HenrikPoulsen/sbxgo/internal/sandbox"
+	"github.com/HenrikPoulsen/sbxgo/internal/sbx"
 	"github.com/spf13/cobra"
 )
 
@@ -72,6 +73,12 @@ Use 'sbxgo run' for everyday work to resume or create the sandbox.`,
 		Version:       versionString(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
+		// PersistentPreRunE runs once per actual subcommand invocation
+		// (setup, run). It does not run for `sbxgo --version`/`--help`,
+		// which is intentional: those should work without sbx installed.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return sbx.NewClient(runner.NewReal()).SetDebug(debug).CheckMinVersion(cmd.Context())
+		},
 	}
 
 	cmd.PersistentFlags().BoolVarP(&debug, "debug", "D", false,

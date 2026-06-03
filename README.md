@@ -12,6 +12,8 @@ As of when creating this repo it was a bit of a pain to set up `sbx` on each new
 
 So this tooling tries to make it easier to use sbx overall if you use it in a per-repository setup.
 
+> **Requires sbx 0.31.1 or newer.** Each `sbxgo` invocation checks `sbx version` first and exits with a clear error if the installed client is too old. Upgrade from [docker/sbx-releases](https://github.com/docker/sbx-releases).
+
 ---
 
 ## Install
