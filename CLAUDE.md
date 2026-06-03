@@ -54,6 +54,7 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 
 ## External references
 
+- **Minimum sbx version**: declared as `sbx.MinVersion` (`internal/sbx/version.go`) and enforced by `Client.CheckMinVersion`, wired into the root cobra command's `PersistentPreRunE`. Bump both the constant and the README "Requires" note when raising the floor.
 - **Releases & issue tracker**: https://github.com/docker/sbx-releases, check here for new sbx versions and to see if a problem you hit has already been reported.
 - **Docs**: https://docs.docker.com/ai/sandboxes/, official documentation for Docker Sandboxes (the `sbx` CLI).
 - **Always verify sbx CLI usage**: before adding or changing how this project invokes `sbx`, run `sbx <command> --help` and confirm flag names, positions, and semantics. Do not rely on memory, since the CLI evolves between releases.
