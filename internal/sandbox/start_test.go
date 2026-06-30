@@ -440,6 +440,7 @@ func TestStart_ResumeClearsManagedSettingsCache(t *testing.T) {
 
 	execIdx := indexOfSbxCall(r.RunCalls, "exec", sandboxName, "sh", "-c")
 	runIdx := indexOfSbxCall(r.RunCalls, "run", sandboxName)
+
 	require.GreaterOrEqual(t, execIdx, 0, "resume must exec into sandbox to clear managed-settings cache")
 	require.GreaterOrEqual(t, runIdx, 0, "resume must call sbx run to attach")
 	assert.Less(t, execIdx, runIdx, "exec must happen before run")

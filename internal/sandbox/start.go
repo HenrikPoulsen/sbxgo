@@ -179,6 +179,7 @@ func resumeSandbox(
 	if opts.DryRun {
 		fmt.Printf("Would run: sbx exec %s -- sh -c 'rm -f ~/.claude/remote-settings.json'\n", sandboxName)
 		fmt.Printf("Would run: sbx run --name %s\n", sandboxName)
+
 		return nil
 	}
 
