@@ -54,6 +54,26 @@ func TestParseList(t *testing.T) {
 	assert.Len(t, sandboxes[1].Workspaces, 2)
 }
 
+func TestParseList_StripsDaemonStartupPreamble(t *testing.T) {
+	t.Parallel()
+
+	// First run after boot: sbx auto-starts its daemon and prepends startup
+	// lines to stdout before the JSON object.
+	preamble := "Starting sandboxd daemon...\n" +
+		"Daemon started (PID: 28496, socket: \\\\.\\pipe\\docker_kaname_sandboxd)\n" +
+		"Logs: C:\\Users\\henrikp\\AppData\\Local\\DockerSandboxes\\sandboxes\\state\\sandboxd\\daemon.log\n"
+
+	fake := runner.NewFakeRunner()
+	fake.SetOutputResponse("sbx", []string{"ls", lsFlagJSON}, []byte(preamble+sampleListJSON))
+
+	client := sbx.NewClient(fake)
+	sandboxes, err := client.List(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, sandboxes, 2)
+	assert.Equal(t, "claude-SymbolServer", sandboxes[0].Name)
+}
+
 func TestParseList_Empty(t *testing.T) {
 	t.Parallel()
 

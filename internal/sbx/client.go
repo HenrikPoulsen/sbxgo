@@ -2,6 +2,7 @@
 package sbx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -228,11 +229,25 @@ func (c *Client) outputCmd(ctx context.Context, sbxArgs ...string) ([]byte, erro
 // parseList parses the JSON output of `sbx ls --json`.
 func parseList(data []byte) ([]Sandbox, error) {
 	var resp listResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
+	if err := json.Unmarshal(extractJSONObject(data), &resp); err != nil {
 		return nil, eris.Wrapf(err, "parsing sbx ls output (raw stdout: %q)", truncateForError(data))
 	}
 
 	return resp.Sandboxes, nil
+}
+
+// extractJSONObject returns the slice of data starting at the first '{'. On the
+// first invocation after boot, sbx auto-starts its daemon and prepends startup
+// lines ("Starting sandboxd daemon...", etc.) to stdout before the JSON object.
+// Trimming everything before the opening brace makes parsing tolerant of that
+// preamble. If no '{' is present the data is returned unchanged so the JSON
+// decoder produces the original error.
+func extractJSONObject(data []byte) []byte {
+	if i := bytes.IndexByte(data, '{'); i >= 0 {
+		return data[i:]
+	}
+
+	return data
 }
 
 // truncateForError caps data at 500 chars for use in error messages.
