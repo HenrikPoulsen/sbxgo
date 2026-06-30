@@ -5,6 +5,11 @@ description: Latest Go toolchain, latest golangci-lint, and sbx CLI for sbxgo de
 
 network:
   allowedDomains:
+    # apt repos for apt-get update/install (the install commands below)
+    - archive.ubuntu.com
+    - security.ubuntu.com
+    - ports.ubuntu.com
+    - download.docker.com
     - go.dev
     - golang.org
     - dl.google.com

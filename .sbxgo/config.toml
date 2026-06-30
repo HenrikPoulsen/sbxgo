@@ -56,7 +56,7 @@ denied_domains = [
 # (or adding, removing, or reordering kits here) is treated as create-time
 # drift and `sbxgo run` will prompt to recreate the sandbox.
 kits = [
-  #".sbxgo/kits/go-tools",
+  ".sbxgo/kits/go-tools",
 ]
 
 # required_secrets: secret names that must be set on the host via `sbx secret set`.
