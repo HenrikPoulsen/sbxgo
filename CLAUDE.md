@@ -68,7 +68,7 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 | `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
-| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy set-default`. |
+| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy init` (renamed from `set-default` in sbx 0.34.0). |
 | `clone` | | `false` | When true, pass `--clone` to sbx (sbx 0.31.0+; replaces the removed `branch` field). |
 | `required_secrets` | | | Names to check; missing ones warn, do not block |
 | `allowed_domains` | | | Sandbox-scoped allow rules added each run (sbx 0.29.0+). Re-add is idempotent. |

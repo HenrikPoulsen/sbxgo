@@ -17,14 +17,37 @@ Server Version:  Unavailable (daemon not running — use 'sbx daemon start')
 func TestVersion_ParsesClientLine(t *testing.T) {
 	t.Parallel()
 
-	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{"version"}, []byte(sampleVersionOutput))
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{
+			name: "multi-line (pre-0.32.0 and -D)",
+			out:  sampleVersionOutput,
+			want: "0.31.1",
+		},
+		{
+			name: "single-line (sbx 0.32.0+ default)",
+			out:  "sbx version: v0.34.0 2eae0c4fc3894475da3318615f69783b0e7be747\n",
+			want: "0.34.0",
+		},
+	}
 
-	client := sbx.NewClient(fake)
-	v, err := client.Version(context.Background())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	assert.Equal(t, "0.31.1", v)
+			fake := runner.NewFakeRunner()
+			fake.SetOutputResponse("sbx", []string{"version"}, []byte(tt.out))
+
+			client := sbx.NewClient(fake)
+			v, err := client.Version(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, v)
+		})
+	}
 }
 
 func TestVersion_Unparseable(t *testing.T) {
@@ -44,8 +67,9 @@ func TestCheckMinVersion_Accepts(t *testing.T) {
 	t.Parallel()
 
 	tests := []string{
-		"Client Version:  v0.31.1 abc\n",
-		"Client Version:  v0.31.2 abc\n",
+		"sbx version: v0.34.0 abc\n",
+		"Client Version:  v0.34.0 abc\n",
+		"Client Version:  v0.34.1 abc\n",
 		"Client Version:  v0.40.0 abc\n",
 		"Client Version:  v1.0.0 abc\n",
 	}
@@ -71,8 +95,8 @@ func TestCheckMinVersion_Rejects(t *testing.T) {
 		out  string
 	}{
 		{"older minor", "Client Version:  v0.29.0 abc\n"},
-		{"older patch", "Client Version:  v0.31.0 abc\n"},
-		{"pre-release of min", "Client Version:  v0.31.1-rc1 abc\n"},
+		{"older patch", "Client Version:  v0.33.0 abc\n"},
+		{"pre-release of min", "Client Version:  v0.34.0-rc1 abc\n"},
 	}
 
 	for _, tt := range tests {

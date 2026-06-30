@@ -177,7 +177,7 @@ func resumeSandbox(
 	}
 
 	if opts.DryRun {
-		fmt.Printf("Would run: sbx run %s\n", sandboxName)
+		fmt.Printf("Would run: sbx run --name %s\n", sandboxName)
 		return nil
 	}
 
@@ -227,7 +227,7 @@ func createSandbox(
 			return err
 		}
 
-		fmt.Printf("Would run: sbx run %s\n", sandboxName)
+		fmt.Printf("Would run: sbx run --name %s\n", sandboxName)
 
 		return nil
 	}

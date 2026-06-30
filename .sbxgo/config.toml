@@ -28,7 +28,7 @@ agent = "claude"
 #   balanced    default sbx policy
 #   deny-all    deny all by default; use allowed_domains to whitelist
 # sbxgo does NOT change the host-wide default. Set it once on the host with
-# `sbx policy set-default <value>`; this field is documentation + a hint for
+# `sbx policy init <value>`; this field is documentation + a hint for
 # what allowed_domains/denied_domains layer on top of.
 network_policy = "deny-all"
 
@@ -56,7 +56,7 @@ denied_domains = [
 # (or adding, removing, or reordering kits here) is treated as create-time
 # drift and `sbxgo run` will prompt to recreate the sandbox.
 kits = [
-  ".sbxgo/kits/go-tools",
+  #".sbxgo/kits/go-tools",
 ]
 
 # required_secrets: secret names that must be set on the host via `sbx secret set`.

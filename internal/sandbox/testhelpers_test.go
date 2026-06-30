@@ -70,12 +70,12 @@ func newRunnerWithExistingSandbox() *runner.FakeRunner {
 func configureExistingRules(r *runner.FakeRunner, sandboxName string, rules []sbx.PolicyRule) {
 	var b strings.Builder
 
-	b.WriteString("NAME                                         TYPE      ORIGIN                 " +
-		"DECISION   STATUS   RESOURCES\n")
+	b.WriteString("PROVENANCE   APPLIES_TO   POLICY/RULE                            TYPE      " +
+		"DECISION   RESOURCES\n")
 
 	for i, rule := range rules {
-		fmt.Fprintf(&b, "local:%08d-fake                          network   local                  %-9s  active   %s\n",
-			i, rule.Decision, rule.Resource)
+		fmt.Fprintf(&b, "local        sandbox:%s   %08d-fake-4a73-4e05-bc9d-f2f9a4b50d67   network   %-9s  %s\n",
+			sandboxName, i, rule.Decision, rule.Resource)
 	}
 
 	r.SetOutputResponse("sbx", []string{"policy", "ls", sandboxName}, []byte(b.String()))

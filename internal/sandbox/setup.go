@@ -95,7 +95,7 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 			return err
 		}
 
-		fmt.Printf("Would run: sbx run %s\n", sandboxName)
+		fmt.Printf("Would run: sbx run --name %s\n", sandboxName)
 
 		return nil
 	}

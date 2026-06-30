@@ -93,54 +93,6 @@ func TestExists_NotFound(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestCurrentPolicy_Balanced(t *testing.T) {
-	t.Parallel()
-
-	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"},
-		[]byte("Current default policy: balanced\n"))
-
-	client := sbx.NewClient(fake)
-	policy, err := client.CurrentPolicy(context.Background())
-
-	require.NoError(t, err)
-	assert.Equal(t, "balanced", policy)
-}
-
-// TestCurrentPolicy_Unknown covers the issue-#126 case: `policy ls` may not
-// surface the default-* row at all. parsePolicy returns "" so callers stay
-// silent rather than nag with a useless "unknown" warning.
-func TestCurrentPolicy_Unknown(t *testing.T) {
-	t.Parallel()
-
-	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"},
-		[]byte("local:abc  network  local  allow  active  example.com\n"))
-
-	client := sbx.NewClient(fake)
-	policy, err := client.CurrentPolicy(context.Background())
-
-	require.NoError(t, err)
-	assert.Empty(t, policy)
-}
-
-// TestCurrentPolicy_SubstringFoolerIgnored verifies the parser does not pick up
-// a policy keyword that only appears as part of a longer rule name. A user rule
-// called "default-balanced-corp" must NOT register as `balanced`.
-func TestCurrentPolicy_SubstringFoolerIgnored(t *testing.T) {
-	t.Parallel()
-
-	fake := runner.NewFakeRunner()
-	fake.SetOutputResponse("sbx", []string{policyGroup, "ls", "--type", "network"},
-		[]byte("default-balanced-corp  network  local  allow  active  api.example.com\n"))
-
-	client := sbx.NewClient(fake)
-	policy, err := client.CurrentPolicy(context.Background())
-
-	require.NoError(t, err)
-	assert.Empty(t, policy, "tokenized parse should ignore substring-only matches")
-}
-
 func TestListSecrets(t *testing.T) {
 	t.Parallel()
 
@@ -188,18 +140,28 @@ func TestListSecrets_NoneFound(t *testing.T) {
 	assert.Empty(t, secrets)
 }
 
-// TestListSandboxRules_ParsesAllowAndDenyAndContinuations covers the three
-// row shapes parseSandboxRules has to handle: a single-resource allow row,
-// a deny row, and a multi-resource rule whose extra resources appear on
-// continuation lines (indented, no NAME/TYPE/ORIGIN columns).
+// TestListSandboxRules_ParsesAllowAndDenyAndContinuations: kit multi-resource continuation,
+// allow/deny rules, filesystem rows ignored.
 func TestListSandboxRules_ParsesAllowAndDenyAndContinuations(t *testing.T) {
 	t.Parallel()
 
-	output := `NAME                                         TYPE      ORIGIN                 DECISION   STATUS   RESOURCES
-local:abc                                    network   local                  allow      active   github.com
-local:def                                    network   local                  deny       active   ads.example.com
-kit:claude-sbxgo                             network   sandbox:claude-sbxgo   allow      active   api.github.com
-                                                                                                  proxy.golang.org
+	output := `PROVENANCE   APPLIES_TO                 POLICY/RULE                            TYPE               DECISION   RESOURCES
+local        all                        kit:claude-sbxgo                       network            allow      claude.com:443
+                                                                                                            downloads.claude.ai:443
+
+local        all                        cc07f8d7-57b9-40a6-9e52-0571d0e19347   network            allow      api.anthropic.com
+
+local        all                        default-fs-read-allow-all              filesystem:read    allow      **
+
+local        all                        default-fs-write-allow-all             filesystem:write   allow      **
+
+kit          sandbox:sbxgo-parsecheck   kit:sbxgo-parsecheck                   network            allow      openrouter.ai
+
+local        sandbox:sbxgo-parsecheck   a978087d-2ee7-4561-926a-6c6fe5b80047   network            allow      github.com
+
+local        sandbox:sbxgo-parsecheck   61cb024f-5cb5-4a06-ab57-c4842d3c5fc2   network            deny       ads.example.com
+
+local        sandbox:sbxgo-parsecheck   73e7fc55-82b4-4dcd-b619-ab43c949b8ef   network            deny       tracker.example.com
 `
 
 	fake := runner.NewFakeRunner()
@@ -210,10 +172,13 @@ kit:claude-sbxgo                             network   sandbox:claude-sbxgo   al
 
 	require.NoError(t, err)
 	assert.Equal(t, []sbx.PolicyRule{
+		{Decision: "allow", Resource: "claude.com:443"},
+		{Decision: "allow", Resource: "downloads.claude.ai:443"},
+		{Decision: "allow", Resource: "api.anthropic.com"},
+		{Decision: "allow", Resource: "openrouter.ai"},
 		{Decision: "allow", Resource: "github.com"},
 		{Decision: "deny", Resource: "ads.example.com"},
-		{Decision: "allow", Resource: "api.github.com"},
-		{Decision: "allow", Resource: "proxy.golang.org"},
+		{Decision: "deny", Resource: "tracker.example.com"},
 	}, rules)
 }
 
@@ -243,7 +208,7 @@ func TestAllowNetwork_SingleDomain(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.RunCalls, 1)
 	assert.Equal(t,
-		[]string{policyGroup, "allow", "network", "claude-myproject", "github.com"},
+		[]string{policyGroup, "allow", "network", "--sandbox", "claude-myproject", "github.com"},
 		fake.RunCalls[0].Args)
 }
 
@@ -258,7 +223,7 @@ func TestAllowNetwork_BatchesIntoOneCall(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.RunCalls, 1)
 	assert.Equal(t,
-		[]string{policyGroup, "allow", "network", "claude-myproject", "github.com,proxy.golang.org"},
+		[]string{policyGroup, "allow", "network", "--sandbox", "claude-myproject", "github.com,proxy.golang.org"},
 		fake.RunCalls[0].Args)
 }
 
@@ -283,7 +248,7 @@ func TestDenyNetwork_BatchesIntoOneCall(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.RunCalls, 1)
 	assert.Equal(t,
-		[]string{policyGroup, "deny", "network", "claude-myproject", "evil.com,ads.example.com"},
+		[]string{policyGroup, "deny", "network", "--sandbox", "claude-myproject", "evil.com,ads.example.com"},
 		fake.RunCalls[0].Args)
 }
 

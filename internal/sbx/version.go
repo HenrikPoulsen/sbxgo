@@ -10,7 +10,7 @@ import (
 
 // MinVersion is the lowest sbx client version sbxgo will run against. Bumped
 // when sbxgo starts relying on a feature or flag introduced upstream.
-const MinVersion = "0.31.1"
+const MinVersion = "0.34.0"
 
 // Version returns the sbx client version (without a leading "v"), parsed from
 // `sbx version`. The server line is ignored: the daemon may be down at the
@@ -55,27 +55,30 @@ func (c *Client) CheckMinVersion(ctx context.Context) error {
 	return nil
 }
 
-// parseClientVersion extracts the version string from the first line of
-// `sbx version` output, which looks like:
+// parseClientVersion extracts version (no leading "v") from `sbx version` output.
+// Two formats exist; --debug (-D) emits the second:
 //
-//	Client Version:  v0.31.1 <commit-sha>
-//
-// Returns "" if no recognizable client-version line is found.
+//	sbx version: v0.34.0 <sha>     // default
+//	Client Version:  v0.34.0 <sha> // with -D flag
 func parseClientVersion(out string) string {
+	prefixes := []string{"sbx version:", "Client Version:"}
+
 	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "Client Version:") {
-			continue
+
+		for _, prefix := range prefixes {
+			rest, ok := strings.CutPrefix(line, prefix)
+			if !ok {
+				continue
+			}
+
+			fields := strings.Fields(rest)
+			if len(fields) == 0 {
+				return ""
+			}
+
+			return strings.TrimPrefix(fields[0], "v")
 		}
-
-		rest := strings.TrimSpace(strings.TrimPrefix(line, "Client Version:"))
-
-		fields := strings.Fields(rest)
-		if len(fields) == 0 {
-			return ""
-		}
-
-		return strings.TrimPrefix(fields[0], "v")
 	}
 
 	return ""

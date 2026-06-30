@@ -12,7 +12,7 @@ As of when creating this repo it was a bit of a pain to set up `sbx` on each new
 
 So this tooling tries to make it easier to use sbx overall if you use it in a per-repository setup.
 
-> **Requires sbx 0.31.1 or newer.** Each `sbxgo` invocation checks `sbx version` first and exits with a clear error if the installed client is too old. Upgrade from [docker/sbx-releases](https://github.com/docker/sbx-releases).
+> **Requires sbx 0.34.0 or newer.** Each `sbxgo` invocation checks `sbx version` first and exits with a clear error if the installed client is too old. Upgrade from [docker/sbx-releases](https://github.com/docker/sbx-releases).
 
 ---
 
@@ -235,7 +235,7 @@ The template written to `.sbxgo/config.toml` by `sbxgo setup` is [config.toml.tm
 | `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
-| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy set-default`. |
+| `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy init` (renamed from `set-default` in sbx 0.34.0). |
 | `clone` | | `false` | When true, pass `--clone` to sbx so the agent works in an in-container clone exposed back as the `sandbox-<name>` git remote (sbx 0.31.0+; replaces the removed `branch` field). |
 | `required_secrets` | | | Secret names to check; missing ones warn, do not block |
 | `allowed_domains` | | | Sandbox-scoped allow rules added on each run (sbx 0.29.0+). Re-add is idempotent. |
@@ -256,8 +256,8 @@ denied_domains  (always wins)
 ```
 
 > **Heads up:** `network_policy` is the *host-wide* baseline (`sbx policy
-> set-default ...`). `sbxgo` doesn't change it for you; you'll see a
-> warning if the configured value doesn't match the active default.
+> init ...`). `sbxgo` doesn't change it for you — it's documentation plus a
+> reminder of the baseline to initialize on the host.
 > `allowed_domains` / `denied_domains` are scoped to this sandbox in sbx
 > 0.29.0+ and applied on every `sbxgo run`; re-adding the same rule is a
 > no-op (sbx reports "Already covered").

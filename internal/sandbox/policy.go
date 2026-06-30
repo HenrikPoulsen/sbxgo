@@ -3,7 +3,6 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/rotisserie/eris"
@@ -23,7 +22,7 @@ import (
 // This keeps the user-facing log quiet on the common no-op case ("all in
 // place") and lets sbx print its own per-resource confirmation when there
 // is real work to do. The sandbox must already exist, since `sbx policy allow
-// network <sandbox> ...` rejects unknown names.
+// network --sandbox <sandbox> ...` rejects unknown names.
 func applyPolicy(
 	ctx context.Context,
 	client *sbx.Client,
@@ -32,10 +31,8 @@ func applyPolicy(
 	dryRun bool,
 ) error {
 	fmt.Printf("Network policy: configured base %q "+
-		"(set host-wide with `sbx policy set-default %s`)\n",
+		"(initialize host-wide with `sbx policy init %s`)\n",
 		cfg.NetworkPolicy, cfg.NetworkPolicy)
-
-	warnIfHostDefaultDiffers(ctx, client, string(cfg.NetworkPolicy))
 
 	if len(cfg.AllowedDomains) == 0 && len(cfg.DeniedDomains) == 0 {
 		return nil
@@ -115,28 +112,4 @@ func diffRules(configured []string, existing []sbx.PolicyRule, decision string) 
 	}
 
 	return missing
-}
-
-// warnIfHostDefaultDiffers prints a WARNING (to stderr) when the host-wide
-// default network policy differs from the one configured for this project.
-// sbxgo never changes the host default (that's a user choice), but a
-// mismatch is almost always a misconfiguration worth surfacing.
-//
-// The check is best-effort: when the active default cannot be parsed from
-// `sbx policy ls --type network` (issue #126), we stay silent rather than
-// nag with an "unknown" line. Errors are swallowed: an advisory warning
-// failing to fire must not block the run.
-func warnIfHostDefaultDiffers(ctx context.Context, client *sbx.Client, desired string) {
-	current, err := client.CurrentPolicy(ctx)
-	if err != nil || current == "" || current == desired {
-		return
-	}
-
-	fmt.Fprintf(os.Stderr,
-		"WARNING: network_policy is %q but the host-wide default is %q.\n"+
-			"         sbxgo does not change the host default automatically. To change it:\n"+
-			"             sbx policy set-default %s\n"+
-			"         (use `sbx policy reset` first if you want a clean slate; it wipes\n"+
-			"         every rule, global AND sandbox-scoped, across all sandboxes.)\n",
-		desired, current, desired)
 }

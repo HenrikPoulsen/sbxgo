@@ -289,9 +289,7 @@ func TestSetup_DryRun_ExistingSandbox_ForceStillPreviews(t *testing.T) {
 	assert.Empty(t, p.Calls, "--force already skips prompts; dry-run shouldn't either")
 }
 
-// TestSetup_NeverChangesHostWideDefault is a regression guard: sbxgo manages
-// per-sandbox rules only and must never call `sbx policy set-default`, even
-// when the configured network_policy differs from the host-wide default.
+// TestSetup_NeverChangesHostWideDefault: sbxgo must never touch host-wide policy baseline.
 func TestSetup_NeverChangesHostWideDefault(t *testing.T) {
 	t.Parallel()
 
@@ -300,37 +298,16 @@ func TestSetup_NeverChangesHostWideDefault(t *testing.T) {
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
 	r := newHappyRunner()
-	// Simulate a mismatch: host default is "balanced", config asks for "deny-all".
-	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"}, []byte("balanced"))
-
-	p := prompt.NewFakePrompter(false)
-
-	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p)
-
-	require.NoError(t, err, "mismatch should warn, not fail")
-	assert.False(t, hasSbxCall(r.RunCalls, "policy", "set-default"),
-		"sbxgo must never call set-default; the host-wide default is a user choice")
-}
-
-// TestSetup_HiddenDefaultTolerated covers the issue-#126 case: `policy ls`
-// returns no recognizable token. We should proceed without warning rather
-// than fail.
-func TestSetup_HiddenDefaultTolerated(t *testing.T) {
-	t.Parallel()
-
-	cfg := "[sandbox]\nagent = \"claude\"\nnetwork_policy = \"deny-all\"\n"
-
-	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
-	r := newHappyRunner()
-	r.SetOutputResponse("sbx", []string{"policy", "ls", "--type", "network"},
-		[]byte("local:abc  network  local  allow  active  example.com\n"))
 
 	p := prompt.NewFakePrompter(false)
 
 	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p)
 
 	require.NoError(t, err)
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "init"),
+		"sbxgo must never call `policy init`; the host-wide baseline is a user choice")
+	assert.False(t, hasSbxCall(r.RunCalls, "policy", "set-default"),
+		"sbxgo must not call `policy set-default`")
 }
 
 // hasDockerCall returns true if any recorded Run call to "docker" contains all the given args.

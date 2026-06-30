@@ -84,10 +84,10 @@ func (c *Client) Exists(ctx context.Context, name string) (bool, error) {
 	return false, nil
 }
 
-// Run resumes an existing sandbox by name.
+// Run attaches to sandbox via `sbx run --name <name>`.
 func (c *Client) Run(ctx context.Context, name string) error {
-	if err := c.runCmd(ctx, "run", name); err != nil {
-		return eris.Wrapf(err, "sbx run %q", name)
+	if err := c.runCmd(ctx, "run", "--name", name); err != nil {
+		return eris.Wrapf(err, "sbx run --name %q", name)
 	}
 
 	return nil
@@ -122,20 +122,6 @@ func (c *Client) LoadTemplate(ctx context.Context, tarPath string) error {
 	return nil
 }
 
-// CurrentPolicy returns the active host-wide default network policy by parsing
-// `sbx policy ls --type network`, or "" if it cannot be determined.
-// "" can occur even when a default is set; see
-// https://github.com/docker/sbx-releases/issues/126. Callers should treat ""
-// as "unknown" and skip any comparison rather than fail.
-func (c *Client) CurrentPolicy(ctx context.Context) (string, error) {
-	out, err := c.outputCmd(ctx, "policy", "ls", "--type", "network")
-	if err != nil {
-		return "", eris.Wrap(err, "sbx policy ls")
-	}
-
-	return parsePolicy(string(out)), nil
-}
-
 // PolicyRule is a single allow/deny rule that applies to a sandbox. Returned
 // by ListSandboxRules, used by callers to diff against configured rules.
 type PolicyRule struct {
@@ -157,37 +143,29 @@ func (c *Client) ListSandboxRules(ctx context.Context, sandboxName string) ([]Po
 	return parseSandboxRules(string(out)), nil
 }
 
-// AllowNetwork adds an allow rule scoped to a sandbox for one or more domains
-// in a single call. `sbx policy allow network <sandbox> RESOURCES` accepts a
-// comma-separated RESOURCES list. Empty lists are a no-op.
-//
-// sbx's per-resource output ("Policy added: <id> (<resource>)") streams to
-// the user's terminal so they see exactly what was applied. Re-adding the
-// same (sandbox, resource) is idempotent, but the typical caller diffs
-// against ListSandboxRules first to avoid the redundant call.
+// AllowNetwork adds allow rules scoped to a sandbox via --sandbox. Empty domains is no-op.
 func (c *Client) AllowNetwork(ctx context.Context, sandboxName string, domains ...string) error {
 	resources := strings.Join(domains, ",")
 	if resources == "" {
 		return nil
 	}
 
-	if err := c.runCmd(ctx, "policy", "allow", "network", sandboxName, resources); err != nil {
-		return eris.Wrapf(err, "sbx policy allow network %q %q", sandboxName, resources)
+	if err := c.runCmd(ctx, "policy", "allow", "network", "--sandbox", sandboxName, resources); err != nil {
+		return eris.Wrapf(err, "sbx policy allow network --sandbox %q %q", sandboxName, resources)
 	}
 
 	return nil
 }
 
-// DenyNetwork adds a deny rule scoped to a sandbox for one or more domains in
-// a single call. Empty lists are a no-op. See AllowNetwork for output handling.
+// DenyNetwork adds deny rules scoped to a sandbox. Empty domains is no-op. See AllowNetwork.
 func (c *Client) DenyNetwork(ctx context.Context, sandboxName string, domains ...string) error {
 	resources := strings.Join(domains, ",")
 	if resources == "" {
 		return nil
 	}
 
-	if err := c.runCmd(ctx, "policy", "deny", "network", sandboxName, resources); err != nil {
-		return eris.Wrapf(err, "sbx policy deny network %q %q", sandboxName, resources)
+	if err := c.runCmd(ctx, "policy", "deny", "network", "--sandbox", sandboxName, resources); err != nil {
+		return eris.Wrapf(err, "sbx policy deny network --sandbox %q %q", sandboxName, resources)
 	}
 
 	return nil
@@ -251,23 +229,42 @@ func (c *Client) outputCmd(ctx context.Context, sbxArgs ...string) ([]byte, erro
 func parseList(data []byte) ([]Sandbox, error) {
 	var resp listResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, eris.Wrap(err, "parsing sbx ls output")
+		return nil, eris.Wrapf(err, "parsing sbx ls output (raw stdout: %q)", truncateForError(data))
 	}
 
 	return resp.Sandboxes, nil
 }
 
-// parseSandboxRules parses the tabular output of `sbx policy ls <sandbox>`.
-// Each rule occupies one "header" line with all columns
-// (NAME TYPE ORIGIN DECISION STATUS RESOURCE) plus zero or more continuation
-// lines containing only an additional resource. Multi-resource rules are
-// flattened into one PolicyRule per resource so callers can do set math.
-// The header row and blank lines are skipped.
+// truncateForError caps data at 500 chars for use in error messages.
+func truncateForError(data []byte) string {
+	const maxLen = 500
+
+	s := strings.TrimSpace(string(data))
+	if len(s) > maxLen {
+		return s[:maxLen] + "…(truncated)"
+	}
+
+	return s
+}
+
+// ruleRowColumns: `sbx policy ls` column count.
+// Layout: PROVENANCE APPLIES_TO POLICY/RULE TYPE DECISION RESOURCES.
+const ruleRowColumns = 6
+
+const (
+	ruleTypeIdx     = 3 // TYPE column ("network", "filesystem:read", ...)
+	ruleDecisionIdx = 4 // DECISION column ("allow"/"deny")
+	ruleResourceIdx = 5 // first RESOURCE column; continuation resources follow
+)
+
+// parseSandboxRules parses `sbx policy ls <sandbox>` output.
+// Full rows (≥6 fields): new rule. Continuation (1 field): extra resource.
+// Skips non-network (filesystem:*) rows. One PolicyRule per resource.
 func parseSandboxRules(output string) []PolicyRule {
 	var (
-		rules         []PolicyRule
-		lastDecision  string
-		seenAnyHeader bool
+		rules        []PolicyRule
+		lastDecision string // decision of the current network rule, "" when the current rule is non-network
+		seenHeader   bool
 	)
 
 	for line := range strings.SplitSeq(output, "\n") {
@@ -276,47 +273,36 @@ func parseSandboxRules(output string) []PolicyRule {
 			continue
 		}
 
-		if !seenAnyHeader && fields[0] == "NAME" {
-			seenAnyHeader = true
+		if !seenHeader && fields[0] == "PROVENANCE" {
+			seenHeader = true
 			continue
 		}
 
-		// A full row: NAME TYPE ORIGIN DECISION STATUS RESOURCE [more...]
-		// Heuristic: NAME column always contains a colon ("local:..." or
-		// "kit:..."), so a colon in fields[0] distinguishes a new rule from
-		// a continuation. The check is simpler and more robust than
-		// counting columns (which can be confused by status values).
-		if strings.Contains(fields[0], ":") && len(fields) >= 6 {
-			lastDecision = fields[3]
-			for _, res := range fields[5:] {
+		// Full row: column count used; early columns can contain colons.
+		if len(fields) >= ruleRowColumns {
+			if fields[ruleTypeIdx] != "network" {
+				// Non-network rule (e.g. filesystem:read/write): ignore it and
+				// any continuation lines it may have.
+				lastDecision = ""
+
+				continue
+			}
+
+			lastDecision = fields[ruleDecisionIdx]
+			for _, res := range fields[ruleResourceIdx:] {
 				rules = append(rules, PolicyRule{Decision: lastDecision, Resource: res})
 			}
 
 			continue
 		}
 
-		// Continuation line: a single resource for the previous rule.
+		// Continuation line: a single additional resource for the current rule.
 		if len(fields) == 1 && lastDecision != "" {
 			rules = append(rules, PolicyRule{Decision: lastDecision, Resource: fields[0]})
 		}
 	}
 
 	return rules
-}
-
-// parsePolicy returns the first whitespace-separated token that exactly
-// matches a known policy name, or "" if none is found. Tokenizing avoids
-// false matches against user rule names that happen to contain a policy
-// keyword as a substring (e.g. "default-balanced-corp").
-func parsePolicy(output string) string {
-	for token := range strings.FieldsSeq(output) {
-		switch token {
-		case "allow-all", "balanced", "deny-all":
-			return token
-		}
-	}
-
-	return ""
 }
 
 // parseSecretList extracts the SERVICE column from `sbx secret ls` output.
