@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
@@ -44,9 +44,42 @@ All external calls go through interfaces injected at the top level:
 
 Key internal packages:
 - `internal/config`: loads and validates `.sbxgo/config.toml`; `config.Load` uses the real OS, `config.Parse` takes bytes (used in tests via the fake filesystem)
-- `internal/sandbox`: orchestration logic (`setup.go`, `start.go`, `policy.go`, `common.go`, `scaffold.go`)
+- `internal/sandbox`: orchestration logic (`setup.go`, `start.go`, `policy.go`, `common.go`, `scaffold.go`, `agentdomains.go`)
 - `internal/sbx`: thin client over the `sbx` CLI
 - `internal/docker`: thin client over the `docker` CLI
+
+### CommandRunner: Run vs Output
+
+`runner.CommandRunner` has two methods with different stdio behavior:
+
+- `Run()`: streams stdout/stderr/stdin to the user's terminal — used for interactive commands (`sbx run`, `sbx create`, `docker build`)
+- `Output()`: captures stdout, forwards stderr to `os.Stderr` — used when the output must be parsed (`sbx ls --json`, `sbx policy ls`, `sbx version`)
+
+### Sandbox naming
+
+Sandbox names follow the pattern `{agent}-{project-dirname}` (e.g. `claude-myproject`). `sandbox.Name()` in `common.go` enforces that sbx only accepts `[A-Za-z0-9.+\-]+`; project directories with underscores or spaces produce an error.
+
+### Drift detection
+
+`sbxgo run` detects when create-time configuration has changed since the sandbox was last created. Fields that cannot be applied to a live sandbox (docker source, `clone`, `extra_workspaces`, kit contents) are hashed into `.sbxgo/.create-state` immediately after `sbx create`. On every `sbxgo run`, `checkDrift` recomputes the hash and prompts the user to recreate if it differs. Sandboxes that predate this feature (no state file) silently write the baseline and skip the prompt.
+
+Kit changes are treated as drift rather than re-applied live because `sbx kit add` on a running sandbox races with apt locks and can overwrite files unpredictably.
+
+### First-run scaffolding
+
+When no `.sbxgo/config.toml` exists, `setup` creates one from an embedded template (`scaffold.go`). For agents with known login endpoints (`agentdomains.go`), the user is prompted (default yes) to pre-fill `allowed_domains`. A `.sbxgo/.gitignore` is also created to exclude `.image-id` and `.create-state`.
+
+### Docker template caching
+
+`sbxgo setup` stores the built/pulled image ID in `.sbxgo/.image-id`. On subsequent runs it compares the new image ID to the stored one and skips `docker save` + `sbx template load` if unchanged.
+
+### Policy diffing
+
+`applyPolicy` calls `sbx policy ls <sandbox>` and parses its tabular output into `PolicyRule` structs, then diffs against the configured allow/deny lists. Only rules not already present are emitted. The `sbx ls --json` parser in `client.go` strips any daemon startup preamble before the `{` to tolerate first-boot output.
+
+### Testing patterns
+
+Tests use `FakeRunner.SetOutputResponse("sbx", []string{"ls", "--json"}, ...)` to stub specific subcommand outputs, and `FakeFileSystem.Files` (a `map[string][]byte`) for in-memory files. `testhelpers_test.go` in `internal/sandbox` provides shared helpers (`newHappyRunner`, `currentSandboxName`, `configureExistingRules`, `hasSbxCall`). Tests are in `package sandbox_test` (external test package).
 
 ## Error handling
 

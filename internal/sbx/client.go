@@ -94,6 +94,17 @@ func (c *Client) Run(ctx context.Context, name string) error {
 	return nil
 }
 
+// Exec runs a command inside a sandbox via `sbx exec`. The command and any
+// arguments are passed directly; the sandbox is started first if it is stopped.
+func (c *Client) Exec(ctx context.Context, sandboxName string, command ...string) error {
+	args := append([]string{"exec", sandboxName}, command...)
+	if err := c.runCmd(ctx, args...); err != nil {
+		return eris.Wrapf(err, "sbx exec %q %s", sandboxName, strings.Join(command, " "))
+	}
+
+	return nil
+}
+
 // Create creates a new sandbox with the provided arguments via `sbx create`.
 // Unlike `sbx run`, this does not attach to the agent; use Run afterwards to attach.
 func (c *Client) Create(ctx context.Context, args []string) error {

@@ -423,6 +423,44 @@ func TestStart_FreshCreateDeclineAttachSkipsRun(t *testing.T) {
 	assert.Contains(t, p.Calls[0], "Start the agent now")
 }
 
+// TestStart_ResumeClearsManagedSettingsCache verifies that on resume, sbx exec is called
+// to delete the Claude Code remote-settings cache before connecting. This prevents
+// forceRemoteSettingsRefresh from causing an immediate exit when the settings fetch fails
+// inside the sandbox proxy environment.
+func TestStart_ResumeClearsManagedSettingsCache(t *testing.T) {
+	t.Parallel()
+
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p))
+
+	execIdx := indexOfSbxCall(r.RunCalls, "exec", sandboxName, "sh", "-c")
+	runIdx := indexOfSbxCall(r.RunCalls, "run", sandboxName)
+	require.GreaterOrEqual(t, execIdx, 0, "resume must exec into sandbox to clear managed-settings cache")
+	require.GreaterOrEqual(t, runIdx, 0, "resume must call sbx run to attach")
+	assert.Less(t, execIdx, runIdx, "exec must happen before run")
+}
+
+// TestStart_DryRunDoesNotClearManagedSettingsCache verifies that dry-run does not
+// actually exec into the sandbox.
+func TestStart_DryRunDoesNotClearManagedSettingsCache(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(minimalConfig)
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(false)
+
+	require.NoError(t, sandbox.Start(context.Background(), sandbox.StartOptions{DryRun: true}, r, fs, p))
+
+	assert.False(t, hasSbxCall(r.RunCalls, "exec"),
+		"dry-run must not exec into sandbox")
+}
+
 // TestStart_NoDriftWhenConfigUnchanged verifies that a matching state hash skips the prompt.
 func TestStart_NoDriftWhenConfigUnchanged(t *testing.T) {
 	t.Parallel()

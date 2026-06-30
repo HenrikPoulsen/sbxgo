@@ -177,15 +177,34 @@ func resumeSandbox(
 	}
 
 	if opts.DryRun {
+		fmt.Printf("Would run: sbx exec %s -- sh -c 'rm -f ~/.claude/remote-settings.json'\n", sandboxName)
 		fmt.Printf("Would run: sbx run --name %s\n", sandboxName)
 		return nil
 	}
+
+	clearManagedSettingsCache(ctx, sbxClient, sandboxName)
 
 	if err := sbxClient.Run(ctx, sandboxName); err != nil {
 		return eris.Wrapf(err, "resuming sandbox %q", sandboxName)
 	}
 
 	return nil
+}
+
+// clearManagedSettingsCache deletes the Claude Code remote-settings cache from
+// the sandbox before connecting. When forceRemoteSettingsRefresh is stored in
+// this file and the settings fetch fails inside the sandbox (a known issue with
+// sbx proxy environments), Claude Code exits immediately on startup. Removing
+// the file resets to fail-open: settings are re-fetched asynchronously in the
+// background and a failed fetch is non-fatal. Non-fatal here too: a failure
+// (e.g. sandbox momentarily unreachable) is logged but does not abort the run.
+func clearManagedSettingsCache(ctx context.Context, client *sbx.Client, sandboxName string) {
+	err := client.Exec(ctx, sandboxName, "sh", "-c", "rm -f ~/.claude/remote-settings.json")
+	if err != nil {
+		fmt.Fprintf(os.Stderr,
+			"Note: could not clear Claude Code managed-settings cache in %q (continuing): %v\n",
+			sandboxName, err)
+	}
 }
 
 // createSandbox creates a new sandbox from config, warning if the template is not built.
