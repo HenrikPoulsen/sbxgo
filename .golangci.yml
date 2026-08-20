@@ -23,7 +23,10 @@ linters:
     - forbidigo
 
     # Conflict with our design choices or idiomatic Go patterns
-    - exhaustruct # conflicts with idiomatic zero-value initialization (cobra.Command has 30+ fields)
+    # conflicts with idiomatic zero-value initialization (cobra.Command has 30+ fields);
+    # both names are listed so the choice survives golangci-lint's rename
+    - exhaustruct
+    - exhaustruct_v5
     - nlreturn    # conflicts with wsl_v5 blank-line rules
     - noinlineerr # disallows the standard `if err := f(); err != nil` pattern
     - varnamelen  # idiomatic Go uses short names: r, fs, ctx, p, h, b, tt
