@@ -2,7 +2,6 @@ package sandbox_test
 
 import (
 	"context"
-	"os"
 	"slices"
 	"testing"
 
@@ -335,9 +334,10 @@ func hasDockerCall(calls []runner.Call, argsSubset ...string) bool {
 	return false
 }
 
-// TestSetup_DockerImagePullsInsteadOfBuilding verifies that an image: source triggers
-// `docker pull` and `docker image inspect`, not `docker build`.
-func TestSetup_DockerImagePullsInsteadOfBuilding(t *testing.T) {
+// TestSetup_DockerImagePassedStraightToCreate verifies that an image: source is
+// handed to `sbx create -t` verbatim. `-t` takes a container image, so sbx pulls
+// the reference itself; setup must not pull, retag, save, or load a template.
+func TestSetup_DockerImagePassedStraightToCreate(t *testing.T) {
 	t.Parallel()
 
 	cfg := `
@@ -350,24 +350,23 @@ image = "ghcr.io/acme/dev:1.4.0"
 	fs := fsutil.NewFakeFileSystem()
 	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
 	r := newHappyRunner()
-	// docker image inspect is invoked via Output and must have a configured response.
-	r.SetOutputResponse("docker",
-		[]string{"image", "inspect", "--format", "{{.Id}}", mustSandboxName("claude", mustWD())},
-		[]byte("sha256:abc123\n"))
-
 	p := prompt.NewFakePrompter(false)
 
 	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{}, r, fs, p)
 
 	require.NoError(t, err)
-	assert.True(t, hasDockerCall(r.RunCalls, "pull", "ghcr.io/acme/dev:1.4.0"),
-		"expected docker pull for the configured image")
-	assert.True(t, hasDockerCall(r.RunCalls, "tag"),
-		"expected docker tag to retag pulled image as the template name")
+	assert.True(t, hasSbxCall(r.RunCalls, "create", "--template", "ghcr.io/acme/dev:1.4.0"),
+		"expected the image reference to be passed to sbx create --template")
+	assert.False(t, hasDockerCall(r.RunCalls, "pull"),
+		"expected no docker pull: sbx pulls the image itself")
+	assert.False(t, hasDockerCall(r.RunCalls, "tag"),
+		"expected no docker tag for a registry image")
 	assert.False(t, hasDockerCall(r.RunCalls, "build"),
 		"expected no docker build for an image: source")
-	assert.True(t, hasSbxCall(r.RunCalls, "template", "load"),
-		"expected sbx template load after pulling a fresh image")
+	assert.False(t, hasSbxCall(r.RunCalls, "template", "load"),
+		"expected no sbx template load for a registry image")
+	assert.NotContains(t, fs.Files, sandbox.ImageIDFile,
+		"expected no image-id bookkeeping for a registry image")
 }
 
 // TestSetup_DockerBuildHonorsContextAndDockerfile verifies the build branch invokes
@@ -462,26 +461,6 @@ dockerfile = ".sbxgo/Dockerfile"
 		"expected sbx template load when image ID changed")
 	assert.Equal(t, "sha256:NEW\n", string(fs.Files[sandbox.ImageIDFile]),
 		"expected stored image ID to be updated to the new value")
-}
-
-// mustWD returns the current working directory or panics.
-func mustWD() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	return wd
-}
-
-// mustSandboxName returns sandbox.Name(agent, workdir) or panics on error.
-func mustSandboxName(agent, workdir string) string {
-	name, err := sandbox.Name(agent, workdir)
-	if err != nil {
-		panic(err)
-	}
-
-	return name
 }
 
 // TestSetup_AllowedDomainsApplied verifies that allowed_domains triggers a

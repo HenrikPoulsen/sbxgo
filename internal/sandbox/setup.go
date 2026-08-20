@@ -62,13 +62,9 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 		return err
 	}
 
-	useTemplate := cfg.Sandbox.Docker != nil
-	templateName := sandboxName
-
-	if useTemplate {
-		if err := prepareTemplate(ctx, opts.DryRun, cfg.Sandbox.Docker, templateName, fs, dockerClient, sbxClient); err != nil {
-			return err
-		}
+	templateRef, err := prepareDockerSource(ctx, opts.DryRun, cfg.Sandbox.Docker, sandboxName, fs, dockerClient, sbxClient)
+	if err != nil {
+		return err
 	}
 
 	if opts.DryRun {
@@ -86,7 +82,7 @@ func Setup(ctx context.Context, opts SetupOptions, r runner.CommandRunner, fs fs
 		}
 	}
 
-	runArgs := BuildRunArgs(&cfg.Sandbox, useTemplate, templateName)
+	runArgs := BuildRunArgs(&cfg.Sandbox, templateRef)
 
 	if opts.DryRun {
 		fmt.Printf("Would run: sbx create %s\n", strings.Join(runArgs, " "))
@@ -149,7 +145,7 @@ func prepareConfig(opts SetupOptions, fs fsutil.FileSystem, p prompt.Prompter) (
 		fmt.Printf("Created %s\n", DefaultConfigPath)
 		fmt.Println("Edit it to configure your sandbox, then run sbxgo setup again.")
 		fmt.Println("When run again, setup will apply network policy, check any required secrets, " +
-			"optionally build or pull a Docker template image, and create the sandbox.")
+			"optionally build a Docker template image, and create the sandbox.")
 
 		return true, nil
 	}
@@ -265,9 +261,15 @@ func removeExistingSandbox(
 	return false, nil
 }
 
-// prepareTemplate either builds (build:) or pulls (image:) the source image,
-// then loads it as an sbx template if its image ID has changed since last setup.
-func prepareTemplate(
+// prepareDockerSource resolves the configured docker source into the value for
+// `sbx create -t`, doing any local work that value depends on.
+//
+// A registry reference ([sandbox.docker.image]) needs no local work at all:
+// `sbx create -t` accepts a container image and sbx pulls it itself at create
+// time, so the ref is returned verbatim. Only a local build
+// ([sandbox.docker.build]) has to be exported into the sbx template store,
+// because sbx cannot pull an image that exists nowhere but the local daemon.
+func prepareDockerSource(
 	ctx context.Context,
 	dryRun bool,
 	dockerCfg *config.DockerConfig,
@@ -275,8 +277,38 @@ func prepareTemplate(
 	fs fsutil.FileSystem,
 	dockerClient *docker.Client,
 	sbxClient *sbx.Client,
+) (string, error) {
+	if dockerCfg == nil {
+		return "", nil
+	}
+
+	if dockerCfg.Image != "" {
+		fmt.Printf("Using image '%s' directly; sbx pulls it when the sandbox is created\n", dockerCfg.Image)
+
+		return dockerCfg.Image, nil
+	}
+
+	if err := prepareTemplate(ctx, dryRun, dockerCfg.Build, templateName, fs, dockerClient, sbxClient); err != nil {
+		return "", err
+	}
+
+	return templateName, nil
+}
+
+// prepareTemplate builds the configured Dockerfile and, if the resulting image
+// ID has changed since the last setup, exports it into the sbx template store
+// under templateName. Build-only: a registry image is handed to sbx directly by
+// prepareDockerSource.
+func prepareTemplate(
+	ctx context.Context,
+	dryRun bool,
+	buildCfg *config.DockerBuildConfig,
+	templateName string,
+	fs fsutil.FileSystem,
+	dockerClient *docker.Client,
+	sbxClient *sbx.Client,
 ) error {
-	newID, err := resolveSourceImage(ctx, dryRun, dockerCfg, templateName, fs, dockerClient)
+	newID, err := buildSourceImage(ctx, dryRun, buildCfg, templateName, fs, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -322,57 +354,31 @@ func readStoredImageID(fs fsutil.FileSystem) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// resolveSourceImage runs the build or pull and returns the local image ID
-// of the resulting tag. In dry-run mode it prints what would run and returns "".
-func resolveSourceImage(
+// buildSourceImage runs the docker build and returns the local image ID of the
+// resulting tag. In dry-run mode it prints what would run and returns "".
+func buildSourceImage(
 	ctx context.Context,
 	dryRun bool,
-	dockerCfg *config.DockerConfig,
+	buildCfg *config.DockerBuildConfig,
 	templateName string,
 	fs fsutil.FileSystem,
 	dockerClient *docker.Client,
 ) (string, error) {
-	if dockerCfg.Build != nil {
-		if dryRun {
-			fmt.Printf("Would run: docker build --iidfile %s -t %s -f %s %s\n",
-				ImageIDNewFile, templateName, dockerCfg.Build.Dockerfile, dockerCfg.Build.Context)
-
-			return "", nil
-		}
-
-		fmt.Printf("Building Docker image for template '%s'\n", templateName)
-
-		err := dockerClient.Build(ctx, ImageIDNewFile, templateName, dockerCfg.Build.Dockerfile, dockerCfg.Build.Context)
-		if err != nil {
-			return "", eris.Wrapf(err, "building template %q", templateName)
-		}
-
-		return readImageID(fs, ImageIDNewFile)
-	}
-
 	if dryRun {
-		fmt.Printf("Would run: docker pull %s\n", dockerCfg.Image)
-		fmt.Printf("Would run: docker tag %s %s\n", dockerCfg.Image, templateName)
+		fmt.Printf("Would run: docker build --iidfile %s -t %s -f %s %s\n",
+			ImageIDNewFile, templateName, buildCfg.Dockerfile, buildCfg.Context)
 
 		return "", nil
 	}
 
-	fmt.Printf("Pulling Docker image '%s'\n", dockerCfg.Image)
+	fmt.Printf("Building Docker image for template '%s'\n", templateName)
 
-	if err := dockerClient.Pull(ctx, dockerCfg.Image); err != nil {
-		return "", eris.Wrapf(err, "pulling image %q for template %q", dockerCfg.Image, templateName)
-	}
-
-	if err := dockerClient.Tag(ctx, dockerCfg.Image, templateName); err != nil {
-		return "", eris.Wrapf(err, "tagging %q as template %q", dockerCfg.Image, templateName)
-	}
-
-	id, err := dockerClient.InspectID(ctx, templateName)
+	err := dockerClient.Build(ctx, ImageIDNewFile, templateName, buildCfg.Dockerfile, buildCfg.Context)
 	if err != nil {
-		return "", eris.Wrapf(err, "inspecting template %q", templateName)
+		return "", eris.Wrapf(err, "building template %q", templateName)
 	}
 
-	return id, nil
+	return readImageID(fs, ImageIDNewFile)
 }
 
 // readImageID reads an image ID file and trims whitespace.

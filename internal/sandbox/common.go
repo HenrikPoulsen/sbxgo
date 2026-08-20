@@ -290,12 +290,40 @@ func checkDrift(cfg *config.Config, fs fsutil.FileSystem) (bool, bool, error) {
 	return stored != current, true, nil
 }
 
-// BuildRunArgs constructs the arguments for `sbx run` to create a new sandbox.
-// It does NOT prepend "run"; that is handled by the caller.
-func BuildRunArgs(cfg *config.SandboxConfig, useTemplate bool, templateName string) []string {
+// TemplateRef resolves the value to pass to `sbx create -t`, or "" to let sbx
+// pick its default agent image.
+//
+// `-t` takes a container image, so a registry reference from
+// [sandbox.docker.image] is passed through verbatim: sbx pulls it itself at
+// create time and no `sbxgo setup` is required.
+//
+// [sandbox.docker.build] produces a local image that sbx cannot pull, so
+// `sbxgo setup` exports it into the sbx template store under the sandbox name.
+// That name only resolves once the load has happened, which localTemplateLoaded
+// reports (tracked by ImageIDFile).
+func TemplateRef(cfg *config.SandboxConfig, localTemplateLoaded bool, sandboxName string) string {
+	if cfg.Docker == nil {
+		return ""
+	}
+
+	if cfg.Docker.Image != "" {
+		return cfg.Docker.Image
+	}
+
+	if localTemplateLoaded {
+		return sandboxName
+	}
+
+	return ""
+}
+
+// BuildRunArgs constructs the arguments for `sbx create`. A non-empty
+// templateRef (see TemplateRef) is passed to `-t`. It does NOT prepend
+// "create"; that is handled by the caller.
+func BuildRunArgs(cfg *config.SandboxConfig, templateRef string) []string {
 	var args []string
-	if useTemplate {
-		args = append(args, "--template", templateName)
+	if templateRef != "" {
+		args = append(args, "--template", templateRef)
 	}
 
 	for _, kit := range cfg.Kits {
