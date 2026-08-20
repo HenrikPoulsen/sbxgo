@@ -20,6 +20,12 @@ golangci-lint run ./...
 go install ./cmd/sbxgo
 ```
 
+`.golangci.yml` requires **golangci-lint 2.13.0+**: it disables `exhaustruct_v5`, a
+name older releases reject outright (`unknown linters: 'exhaustruct_v5'`) rather
+than ignore. CI pins `version: latest`, and the `go-tools` kit installs the latest
+release at sandbox-create time, so only a stale local binary hits this — upgrade
+with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`.
+
 Run a single test:
 
 ```bash
