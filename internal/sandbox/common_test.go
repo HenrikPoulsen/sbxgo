@@ -73,7 +73,7 @@ func TestBuildRunArgs_NoTemplate(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.SandboxConfig{Agent: agentClaude}
-	args := sandbox.BuildRunArgs(cfg, false, "")
+	args := sandbox.BuildRunArgs(cfg, "")
 
 	assert.Equal(t, []string{agentClaude, "."}, args)
 }
@@ -82,7 +82,7 @@ func TestBuildRunArgs_WithTemplate(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.SandboxConfig{Agent: agentClaude}
-	args := sandbox.BuildRunArgs(cfg, true, templateName)
+	args := sandbox.BuildRunArgs(cfg, templateName)
 
 	assert.Equal(t, []string{flagTemplate, templateName, agentClaude, "."}, args)
 }
@@ -94,7 +94,7 @@ func TestBuildRunArgs_WithKits(t *testing.T) {
 		Agent: agentClaude,
 		Kits:  []string{kitGo, kitNode},
 	}
-	args := sandbox.BuildRunArgs(cfg, false, "")
+	args := sandbox.BuildRunArgs(cfg, "")
 
 	assert.Equal(t, []string{flagKit, kitGo, flagKit, kitNode, agentClaude, "."}, args)
 }
@@ -103,7 +103,7 @@ func TestBuildRunArgs_WithClone(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.SandboxConfig{Agent: agentClaude, Clone: true}
-	args := sandbox.BuildRunArgs(cfg, false, "")
+	args := sandbox.BuildRunArgs(cfg, "")
 
 	assert.Equal(t, []string{flagClone, agentClaude, "."}, args)
 }
@@ -115,7 +115,7 @@ func TestBuildRunArgs_WithExtraWorkspaces(t *testing.T) {
 		Agent:           agentClaude,
 		ExtraWorkspaces: []string{"/shared", "/tools"},
 	}
-	args := sandbox.BuildRunArgs(cfg, false, "")
+	args := sandbox.BuildRunArgs(cfg, "")
 
 	assert.Equal(t, []string{agentClaude, ".", "/shared", "/tools"}, args)
 }
@@ -129,7 +129,7 @@ func TestBuildRunArgs_FullOptions(t *testing.T) {
 		Clone:           true,
 		ExtraWorkspaces: []string{"/extra"},
 	}
-	args := sandbox.BuildRunArgs(cfg, true, templateName)
+	args := sandbox.BuildRunArgs(cfg, templateName)
 
 	assert.Equal(t, []string{
 		flagTemplate, templateName,

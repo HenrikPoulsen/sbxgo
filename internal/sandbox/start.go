@@ -82,6 +82,13 @@ func Start(
 		}
 
 		if recreate {
+			// Fail before destroying anything if the configured docker source
+			// cannot be resolved into a `-t` value; otherwise the recreate
+			// would succeed with the wrong image.
+			if _, err := resolveTemplateRef(cfg, fs, sandboxName); err != nil {
+				return err
+			}
+
 			fmt.Printf("Removing existing sandbox '%s' to recreate\n", sandboxName)
 
 			if err := sbxClient.Remove(ctx, sandboxName); err != nil {
@@ -123,7 +130,9 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 		return false, nil
 	}
 
-	hasDocker := cfg.Sandbox.Docker != nil
+	// Only a local build needs setup re-run before a recreate; a registry image
+	// is re-resolved by sbx on every create.
+	needsSetup := cfg.Sandbox.Docker != nil && cfg.Sandbox.Docker.Build != nil
 
 	if opts.DryRun {
 		fmt.Println("Configuration drift detected (docker source, clone, extra_workspaces, or kit contents " +
@@ -135,10 +144,10 @@ func handleDrift(opts StartOptions, cfg *config.Config, fs fsutil.FileSystem, p 
 	fmt.Println("Configuration affecting sandbox creation has changed since this sandbox was created.")
 	fmt.Println("(Affected fields: docker source, clone, extra_workspaces, kits.)")
 
-	if hasDocker {
-		fmt.Println("NOTE: a docker source is configured. If the image or Dockerfile changed, run `sbxgo setup` " +
-			"instead; `sbxgo run` will recreate the sandbox using the previously loaded template and " +
-			"will not rebuild or re-pull.")
+	if needsSetup {
+		fmt.Println("NOTE: [sandbox.docker.build] is configured. If the Dockerfile changed, run `sbxgo setup` " +
+			"instead; `sbxgo run` will recreate the sandbox from the previously loaded template and " +
+			"will not rebuild.")
 	}
 
 	confirmed, err := p.Confirm("Recreate sandbox now? This discards any in-sandbox state.", false)
@@ -208,7 +217,34 @@ func clearManagedSettingsCache(ctx context.Context, client *sbx.Client, sandboxN
 	}
 }
 
-// createSandbox creates a new sandbox from config, warning if the template is not built.
+// resolveTemplateRef resolves the `sbx create -t` value for a create performed
+// by `sbxgo run`.
+//
+// A registry image ([sandbox.docker.image]) needs nothing from `sbxgo setup`:
+// sbx pulls it itself. A local build ([sandbox.docker.build]) does, because its
+// image reaches sbx only through setup's template load and `sbxgo run` has no
+// builder. Creating without it would silently fall back to sbx's default agent
+// image, so that case is an error rather than a warning.
+func resolveTemplateRef(cfg *config.Config, fs fsutil.FileSystem, sandboxName string) (string, error) {
+	localTemplateLoaded, err := fs.Exists(ImageIDFile)
+	if err != nil {
+		return "", eris.Wrapf(err, "checking image ID file %q", ImageIDFile)
+	}
+
+	ref := TemplateRef(&cfg.Sandbox, localTemplateLoaded, sandboxName)
+
+	if ref == "" && cfg.Sandbox.Docker != nil {
+		return "", eris.Errorf(
+			"[sandbox.docker.build] is configured but its template has not been loaded (%s is missing): "+
+				"run `sbxgo setup` to build the image and load it into sbx; `sbxgo run` cannot build it, and "+
+				"creating the sandbox now would silently use sbx's default agent image",
+			ImageIDFile)
+	}
+
+	return ref, nil
+}
+
+// createSandbox creates a new sandbox from config.
 // After create + policy apply, the user is prompted before the agent attaches
 // so create output (kit installs, etc.) is readable before `sbx run` clears
 // the terminal, matching `sbxgo setup`'s behavior.
@@ -227,18 +263,12 @@ func createSandbox(
 		fmt.Println("No existing sandbox found, creating...")
 	}
 
-	imageIDExists, err := fs.Exists(ImageIDFile)
+	templateRef, err := resolveTemplateRef(cfg, fs, sandboxName)
 	if err != nil {
-		return eris.Wrapf(err, "checking image ID file %q", ImageIDFile)
+		return err
 	}
 
-	hasDockerConfig := cfg.Sandbox.Docker != nil
-
-	if hasDockerConfig && !imageIDExists {
-		fmt.Fprintln(os.Stderr, "WARNING: docker source configured but template not loaded. Run sbxgo setup first.")
-	}
-
-	runArgs := BuildRunArgs(&cfg.Sandbox, imageIDExists, sandboxName)
+	runArgs := BuildRunArgs(&cfg.Sandbox, templateRef)
 
 	if opts.DryRun {
 		fmt.Printf("Would run: sbx create %s\n", strings.Join(runArgs, " "))

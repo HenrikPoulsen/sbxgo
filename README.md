@@ -157,7 +157,7 @@ Flags:
 
 On each invocation, `sbxgo setup`:
 1. Warns about any missing required secrets
-2. If `[sandbox.docker]` is set, builds (`docker.build`) or pulls (`docker.image`) the source image, then loads it into sbx as a named template, but only when the resolved image ID differs from the last setup
+2. If `docker.build` is set, builds the image and loads it into sbx as a named template, but only when the built image ID differs from the last setup. If `docker.image` is set instead, does nothing here: the reference goes straight to `sbx create -t` and sbx pulls it
 3. If a sandbox already exists for this project, prompts to recreate it (skip with `--force`); on confirm, removes it
 4. Creates the sandbox via `sbx create`
 5. Applies `allowed_domains` / `denied_domains` from config as sandbox-scoped rules
@@ -232,7 +232,7 @@ The template written to `.sbxgo/config.toml` by `sbxgo setup` is [config.toml.tm
 |---|---|---|---|
 | `agent` | yes | | `claude`, `codex`, `kiro`, `shell`, etc. |
 | `[sandbox.docker]` | | | Source of the template image. Set exactly one of `image` or `[sandbox.docker.build]`, or omit the section to use sbx's default base. |
-| `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
+| `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Passed to `sbx create -t` verbatim; sbx pulls it. Needs no `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
 | `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy init` (renamed from `set-default` in sbx 0.34.0). |

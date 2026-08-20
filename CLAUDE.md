@@ -71,7 +71,9 @@ When no `.sbxgo/config.toml` exists, `setup` creates one from an embedded templa
 
 ### Docker template caching
 
-`sbxgo setup` stores the built/pulled image ID in `.sbxgo/.image-id`. On subsequent runs it compares the new image ID to the stored one and skips `docker save` + `sbx template load` if unchanged.
+This applies to `docker.build` only. `sbxgo setup` stores the built image ID in `.sbxgo/.image-id`; on subsequent runs it compares the new image ID to the stored one and skips `docker save` + `sbx template load` if unchanged.
+
+`docker.image` needs none of this: `sbx create -t` accepts a container image, so the registry reference is passed through verbatim and sbx pulls it at create time. No `sbxgo setup` is required for an image source, and `.sbxgo/.image-id` is not involved.
 
 ### Policy diffing
 
@@ -98,7 +100,7 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 |---|---|---|---|
 | `agent` | yes | | `claude`, `codex`, `kiro`, `shell`, etc. |
 | `[docker]` | | | Source of the template image. Set exactly one of `image` or `[docker.build]` (or omit the section to use sbx's default base). |
-| `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Pulled by `sbxgo setup`. |
+| `docker.image` | | | Registry reference, e.g. `ghcr.io/acme/dev:1.4.0`. Passed to `sbx create -t` verbatim; sbx pulls it. Needs no `sbxgo setup`. |
 | `docker.build.context` | | `.` | Build context passed to `docker build`. |
 | `docker.build.dockerfile` | | `.sbxgo/Dockerfile` | Path to the Dockerfile. |
 | `network_policy` | | `deny-all` | `allow-all`, `balanced`, or `deny-all`. Documentation only; sbxgo never changes the host-wide default. Set it with `sbx policy init` (renamed from `set-default` in sbx 0.34.0). |

@@ -486,3 +486,85 @@ func TestStart_NoDriftWhenConfigUnchanged(t *testing.T) {
 	assert.True(t, hasSbxCall(r2.RunCalls, "run", sandboxName),
 		"expected sandbox to be resumed normally")
 }
+
+// TestStart_CreateWithDockerImageUsesImageRef verifies that `sbxgo run` creating
+// a sandbox passes a configured registry image straight to `sbx create -t`,
+// with no prior `sbxgo setup` and no template bookkeeping: `-t` takes a
+// container image and sbx pulls it itself.
+func TestStart_CreateWithDockerImageUsesImageRef(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n\n[sandbox.docker]\nimage = \"registry.example.com/team/dev:2\"\n"
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false) // decline attach
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.NoError(t, err)
+	assert.True(t, hasSbxCall(r.RunCalls, "create", "--template", "registry.example.com/team/dev:2"),
+		"expected the configured image reference to be passed to sbx create --template")
+}
+
+// TestStart_CreateWithDockerBuildErrorsWhenTemplateMissing verifies that a
+// build: source with no loaded template is a hard error rather than a warning
+// followed by a sandbox silently created from sbx's default agent image.
+func TestStart_CreateWithDockerBuildErrorsWhenTemplateMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n\n[sandbox.docker.build]\ncontext = \".\"\n"
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sbxgo setup")
+	assert.False(t, hasSbxCall(r.RunCalls, "create"),
+		"expected no sandbox to be created without the template it was configured to use")
+}
+
+// TestStart_CreateWithDockerBuildUsesLoadedTemplate verifies that once setup has
+// loaded the locally built image, `sbxgo run` creates from the sandbox-named
+// template.
+func TestStart_CreateWithDockerBuildUsesLoadedTemplate(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n\n[sandbox.docker.build]\ncontext = \".\"\n"
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	fs.Files[sandbox.ImageIDFile] = []byte("sha256:loaded\n")
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.NoError(t, err)
+	assert.True(t, hasSbxCall(r.RunCalls, "create", "--template", sandboxName),
+		"expected sbx create to use the template loaded by setup")
+}
+
+// TestStart_DriftRecreateWithMissingTemplateKeepsSandbox verifies that the
+// template guard runs before the destructive removal: a build: source with no
+// loaded template must not leave the user with no sandbox at all.
+func TestStart_DriftRecreateWithMissingTemplateKeepsSandbox(t *testing.T) {
+	t.Parallel()
+
+	cfg := "[sandbox]\nagent = \"claude\"\n\n[sandbox.docker.build]\ncontext = \".\"\n"
+	sandboxName := currentSandboxName()
+	fs := fsutil.NewFakeFileSystem()
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfg)
+	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
+	r := newRunnerWithExistingSandbox()
+	p := prompt.NewFakePrompter(true) // user confirms recreate
+
+	err := sandbox.Start(context.Background(), sandbox.StartOptions{}, r, fs, p)
+
+	require.Error(t, err)
+	assert.False(t, hasSbxCall(r.RunCalls, "rm", "--force", sandboxName),
+		"expected the existing sandbox to survive a recreate that cannot succeed")
+}
