@@ -57,7 +57,7 @@ type DockerBuildConfig struct {
 
 // Load reads and parses a TOML config file from the given path using the OS filesystem.
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return nil, eris.Wrapf(err, "loading config %q", path)
 	}
@@ -85,15 +85,13 @@ func Parse(data []byte, path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// sandboxKeys are the keys valid directly under [sandbox], derived from
-// SandboxConfig's toml tags so the misplaced-key hint below cannot drift
-// out of sync with the struct. Sub-table fields (struct pointers) are
+// sandboxKeyTags returns the keys valid directly under [sandbox], derived
+// from SandboxConfig's toml tags so the misplaced-key hint below cannot
+// drift out of sync with the struct. Sub-table fields (struct pointers) are
 // skipped: they open their own key namespace and cannot be "swallowed".
-var sandboxKeys = sandboxKeyTags()
-
 func sandboxKeyTags() map[string]bool {
 	keys := make(map[string]bool)
-	t := reflect.TypeOf(SandboxConfig{})
+	t := reflect.TypeFor[SandboxConfig]()
 
 	for i := range t.NumField() {
 		field := t.Field(i)
@@ -109,11 +107,13 @@ func sandboxKeyTags() map[string]bool {
 	return keys
 }
 
-// removedKeys maps config keys that existed in earlier sbxgo releases to
+// removedKeyHints maps config keys that existed in earlier sbxgo releases to
 // migration guidance, so a committed old config fails with instructions
 // instead of a bare "unknown key".
-var removedKeys = map[string]string{
-	"sandbox.branch": "the branch field was removed; use clone = true (sbx 0.31.0+) instead",
+func removedKeyHints() map[string]string {
+	return map[string]string{
+		"sandbox.branch": "the branch field was removed; use clone = true (sbx 0.31.0+) instead",
+	}
 }
 
 // checkUnknownKeys rejects any key in the TOML document that did not decode
@@ -126,6 +126,8 @@ func checkUnknownKeys(md toml.MetaData) error {
 		return nil
 	}
 
+	sandboxKeys := sandboxKeyTags()
+	removedKeys := removedKeyHints()
 	names := make([]string, 0, len(undecoded))
 	hint := ""
 
