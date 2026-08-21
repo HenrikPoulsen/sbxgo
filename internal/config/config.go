@@ -2,6 +2,10 @@
 package config
 
 import (
+	"os"
+	"reflect"
+	"strings"
+
 	"github.com/BurntSushi/toml"
 	"github.com/rotisserie/eris"
 )
@@ -53,10 +57,25 @@ type DockerBuildConfig struct {
 
 // Load reads and parses a TOML config file from the given path using the OS filesystem.
 func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, eris.Wrapf(err, "loading config %q", path)
+	}
+
+	return Parse(data, path)
+}
+
+// Parse decodes a TOML config from raw bytes. path is used only for error messages.
+func Parse(data []byte, path string) (*Config, error) {
 	var cfg Config
 
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	md, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		return nil, eris.Wrapf(err, "loading config %q", path)
+	}
+
+	if err := checkUnknownKeys(md); err != nil {
+		return nil, eris.Wrapf(err, "validating config %q", path)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -66,19 +85,75 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Parse decodes a TOML config from raw bytes. path is used only for error messages.
-func Parse(data []byte, path string) (*Config, error) {
-	var cfg Config
+// sandboxKeys are the keys valid directly under [sandbox], derived from
+// SandboxConfig's toml tags so the misplaced-key hint below cannot drift
+// out of sync with the struct. Sub-table fields (struct pointers) are
+// skipped: they open their own key namespace and cannot be "swallowed".
+var sandboxKeys = sandboxKeyTags()
 
-	if _, err := toml.Decode(string(data), &cfg); err != nil {
-		return nil, eris.Wrapf(err, "loading config %q", path)
+func sandboxKeyTags() map[string]bool {
+	keys := make(map[string]bool)
+	t := reflect.TypeOf(SandboxConfig{})
+
+	for i := range t.NumField() {
+		field := t.Field(i)
+		if field.Type.Kind() == reflect.Pointer {
+			continue
+		}
+
+		if tag := field.Tag.Get("toml"); tag != "" {
+			keys[tag] = true
+		}
 	}
 
-	if err := cfg.Validate(); err != nil {
-		return nil, eris.Wrapf(err, "validating config %q", path)
+	return keys
+}
+
+// removedKeys maps config keys that existed in earlier sbxgo releases to
+// migration guidance, so a committed old config fails with instructions
+// instead of a bare "unknown key".
+var removedKeys = map[string]string{
+	"sandbox.branch": "the branch field was removed; use clone = true (sbx 0.31.0+) instead",
+}
+
+// checkUnknownKeys rejects any key in the TOML document that did not decode
+// into a Config field. Without this, a misplaced or misspelled key is
+// silently ignored — e.g. allowed_domains landing under [sandbox.docker]
+// would quietly disable the network allow list.
+func checkUnknownKeys(md toml.MetaData) error {
+	undecoded := md.Undecoded()
+	if len(undecoded) == 0 {
+		return nil
 	}
 
-	return &cfg, nil
+	names := make([]string, 0, len(undecoded))
+	hint := ""
+
+	for _, key := range undecoded {
+		full := key.String()
+		names = append(names, full)
+
+		if hint != "" {
+			continue
+		}
+
+		segments := []string(key)
+		last := segments[len(segments)-1]
+
+		switch {
+		case removedKeys[full] != "":
+			hint = "; " + removedKeys[full]
+		case len(segments) == 1 && sandboxKeys[last]:
+			hint = "; " + last + " is a [sandbox] key but appears at the top level — did you forget the [sandbox] header?"
+		case len(segments) > 1 && segments[0] == "sandbox" && sandboxKeys[last]:
+			hint = "; " + last + " belongs directly under [sandbox] — in TOML every key after a " +
+				"[table] header joins that table, so move it above the [" +
+				strings.Join(segments[:len(segments)-1], ".") +
+				"] header (and keep that section at the end of the file)"
+		}
+	}
+
+	return eris.Errorf("unknown key(s): %s%s", strings.Join(names, ", "), hint)
 }
 
 // Validate checks that required fields are present and values are valid.

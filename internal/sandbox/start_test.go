@@ -354,10 +354,10 @@ func TestStart_DryRunSkipsPolicyCalls(t *testing.T) {
 func TestStart_RecreatePathPausesBeforeAttach(t *testing.T) {
 	t.Parallel()
 
-	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	cfgWithClone := "[sandbox]\nagent = \"claude\"\nclone = true\n"
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithClone)
 	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
 	r := newRunnerWithExistingSandbox()
 	p := prompt.NewFakePrompter(true) // confirm recreate AND attach
@@ -380,10 +380,10 @@ func TestStart_RecreatePathPausesBeforeAttach(t *testing.T) {
 func TestStart_RecreateDeclineAttachSkipsRun(t *testing.T) {
 	t.Parallel()
 
-	cfgWithBranch := "[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n"
+	cfgWithClone := "[sandbox]\nagent = \"claude\"\nclone = true\n"
 	sandboxName := currentSandboxName()
 	fs := fsutil.NewFakeFileSystem()
-	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithBranch)
+	fs.Files[sandbox.DefaultConfigPath] = []byte(cfgWithClone)
 	fs.Files[sandbox.CreateStateFile] = []byte("stale-hash\n")
 	r := newRunnerWithExistingSandbox()
 	// FakePrompter returns the same answer for every Confirm call, so this

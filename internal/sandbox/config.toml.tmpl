@@ -9,22 +9,6 @@
 # agent: the AI agent to run inside the sandbox.
 agent = "{{AGENT}}"
 
-# docker: source of the sandbox template image.
-# Optional. If omitted, sbx uses its default base image. When set, run
-# `sbxgo setup` to build or pull and load the template before running
-# `sbxgo run`.
-#
-# Set exactly one of:
-#
-#   [sandbox.docker]
-#   image = "ghcr.io/acme/dev:1.4.0"   # pull a published image
-#
-# OR
-#
-#   [sandbox.docker.build]
-#   context    = "."                     # build context (default ".")
-#   dockerfile = ".sbxgo/Dockerfile"     # default ".sbxgo/Dockerfile"
-
 # network_policy: declares the baseline you expect this sandbox to run under.
 # One of:
 #   allow-all   allow all outbound traffic
@@ -70,3 +54,24 @@ required_secrets = [
 extra_workspaces = [
   # "/home/user/shared-libs",
 ]
+
+# [sandbox.docker]: source of the sandbox template image.
+# Optional. If omitted, sbx uses its default base image.
+#
+# IMPORTANT: keep this section at the END of the file. In TOML, every key
+# after a [table] header belongs to that table, so uncommenting it above
+# the plain [sandbox] keys (allowed_domains, kits, ...) would silently
+# swallow them into [sandbox.docker].
+#
+# Set exactly one of:
+#
+#   [sandbox.docker]
+#   image = "ghcr.io/acme/dev:1.4.0"   # a published image; sbx pulls it at
+#                                      # create time, no `sbxgo setup` needed
+#
+# OR
+#
+#   [sandbox.docker.build]
+#   context    = "."                     # build context (default ".")
+#   dockerfile = ".sbxgo/Dockerfile"     # default ".sbxgo/Dockerfile"
+#                                        # run `sbxgo setup` to build + load

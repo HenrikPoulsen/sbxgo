@@ -234,6 +234,142 @@ dockerfile = "Dockerfile"
 	assert.Contains(t, err.Error(), "exactly one")
 }
 
+// TestParse_KeysSwallowedByDockerTableIsError covers the TOML trap that
+// silently disabled a user's allow list: [sandbox.docker] placed above the
+// plain [sandbox] keys claims everything after it, so allowed_domains &co
+// decode into (and are rejected by) the docker table instead of vanishing.
+func TestParse_KeysSwallowedByDockerTableIsError(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`
+[sandbox]
+agent = "claude"
+
+[sandbox.docker]
+image = "ghcr.io/acme/dev:1.4.0"
+
+network_policy  = "deny-all"
+allowed_domains = ["api.anthropic.com"]
+`)
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.docker.allowed_domains",
+		"expected the misplaced key reported with its full path")
+	assert.Contains(t, err.Error(), "belongs directly under [sandbox]",
+		"expected the move-the-table hint")
+	assert.Contains(t, err.Error(), "in-memory")
+}
+
+func TestParse_UnknownKeyIsError(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`
+[sandbox]
+agent          = "claude"
+allowd_domains = ["api.anthropic.com"]
+`)
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.allowd_domains")
+	assert.NotContains(t, err.Error(), "belongs directly under",
+		"a plain typo should not get the misplaced-table hint")
+}
+
+func TestLoad_UnknownKeyIsError(t *testing.T) {
+	t.Parallel()
+
+	path := writeTempTOML(t, "[sandbox]\nagent = \"claude\"\nbogus = 1\n")
+
+	_, err := config.Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.bogus")
+}
+
+// TestParse_RemovedBranchKeyGetsMigrationHint verifies a config still
+// carrying the removed branch field fails with guidance toward clone
+// instead of a bare unknown-key error.
+func TestParse_RemovedBranchKeyGetsMigrationHint(t *testing.T) {
+	t.Parallel()
+
+	data := []byte("[sandbox]\nagent = \"claude\"\nbranch = \"feature-x\"\n")
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.branch")
+	assert.Contains(t, err.Error(), "clone = true", "expected migration guidance toward clone")
+}
+
+// TestParse_TypoTableGetsNoMisplacedHint verifies a misspelled table name
+// ([sanbox]) reports the unknown keys without the move-the-section advice,
+// which would be actively wrong there.
+func TestParse_TypoTableGetsNoMisplacedHint(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`
+[sandbox]
+agent = "claude"
+
+[sanbox]
+allowed_domains = ["api.anthropic.com"]
+`)
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sanbox.allowed_domains")
+	assert.NotContains(t, err.Error(), "belongs directly under",
+		"a typo'd table name must not get the misplaced-key hint")
+}
+
+// TestParse_MissingSandboxHeaderGetsHint verifies that [sandbox] keys written
+// at the top level (no header at all) point the user at the missing header.
+func TestParse_MissingSandboxHeaderGetsHint(t *testing.T) {
+	t.Parallel()
+
+	data := []byte("agent = \"claude\"\nallowed_domains = [\"api.anthropic.com\"]\n")
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "did you forget the [sandbox] header")
+}
+
+// TestParse_SandboxKeyInBuildTableGetsHint verifies the hint also covers a
+// single [sandbox] key written into a deeper sub-table.
+func TestParse_SandboxKeyInBuildTableGetsHint(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`
+[sandbox]
+agent = "claude"
+
+[sandbox.docker.build]
+clone = true
+`)
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.docker.build.clone")
+	assert.Contains(t, err.Error(), "belongs directly under [sandbox]")
+	assert.Contains(t, err.Error(), "[sandbox.docker.build]")
+}
+
+func TestParse_UnknownDockerBuildKeyIsError(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`
+[sandbox]
+agent = "claude"
+
+[sandbox.docker.build]
+dockerfle = "Dockerfile"
+`)
+
+	_, err := config.Parse(data, "in-memory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sandbox.docker.build.dockerfle")
+}
+
 func TestParse_DockerEmptySectionIsError(t *testing.T) {
 	t.Parallel()
 
