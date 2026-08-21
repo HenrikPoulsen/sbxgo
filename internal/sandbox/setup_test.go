@@ -2,9 +2,12 @@ package sandbox_test
 
 import (
 	"context"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/HenrikPoulsen/sbxgo/internal/config"
 	"github.com/HenrikPoulsen/sbxgo/internal/fsutil"
 	"github.com/HenrikPoulsen/sbxgo/internal/prompt"
 	"github.com/HenrikPoulsen/sbxgo/internal/runner"
@@ -126,6 +129,70 @@ func TestSetup_ScaffoldEmbedsLLMHeader(t *testing.T) {
 	cfg := string(fs.Files[sandbox.DefaultConfigPath])
 	assert.Contains(t, cfg, "github.com/HenrikPoulsen/sbxgo",
 		"expected the LLM-friendly repo pointer at the top of the scaffolded config")
+}
+
+// TestSetup_ScaffoldPutsDockerSectionLast guards against the TOML table trap:
+// every key after a [table] header belongs to that table, so if the commented
+// [sandbox.docker] example sat above the plain [sandbox] keys, uncommenting it
+// would silently swallow allowed_domains, kits, etc. into [sandbox.docker].
+// The docker section must therefore stay after the last plain key.
+func TestSetup_ScaffoldPutsDockerSectionLast(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(false)
+
+	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{Agent: "claude"}, r, fs, p)
+
+	require.NoError(t, err)
+
+	cfg := string(fs.Files[sandbox.DefaultConfigPath])
+	dockerIdx := strings.Index(cfg, "[sandbox.docker]")
+	require.GreaterOrEqual(t, dockerIdx, 0, "expected the [sandbox.docker] example in the scaffold")
+
+	// Match actual assignments at the start of a line, not mentions of the
+	// key in comment prose (which would keep this test green even if the
+	// assignments themselves moved below the docker example).
+	for _, key := range []string{
+		"network_policy", "allowed_domains", "denied_domains",
+		"kits", "required_secrets", "extra_workspaces",
+	} {
+		assignment := regexp.MustCompile(`(?m)^` + key + `\s*=`).FindStringIndex(cfg)
+		require.NotNil(t, assignment, "expected an uncommented %s assignment in the scaffold", key)
+		assert.Less(t, assignment[0], dockerIdx,
+			"%s assignment must appear before the [sandbox.docker] example, or uncommenting it swallows the key", key)
+	}
+}
+
+// TestSetup_ScaffoldSurvivesUncommentingDockerImage exercises the guarantee
+// the ordering test approximates: following the scaffold's own instructions
+// (uncomment [sandbox.docker] + image) must yield a config that still parses,
+// with every plain key still under [sandbox] rather than swallowed into the
+// docker table (which the strict unknown-key check would reject).
+func TestSetup_ScaffoldSurvivesUncommentingDockerImage(t *testing.T) {
+	t.Parallel()
+
+	fs := fsutil.NewFakeFileSystem()
+	r := newHappyRunner()
+	p := prompt.NewFakePrompter(true) // accept domain prefill so allowed_domains is non-empty
+
+	err := sandbox.Setup(context.Background(), sandbox.SetupOptions{Agent: "claude"}, r, fs, p)
+	require.NoError(t, err)
+
+	scaffolded := string(fs.Files[sandbox.DefaultConfigPath])
+
+	uncommented := strings.Replace(scaffolded, "#   [sandbox.docker]", "[sandbox.docker]", 1)
+	uncommented = strings.Replace(uncommented, "#   image = ", "image = ", 1)
+	require.NotEqual(t, scaffolded, uncommented,
+		"expected the commented [sandbox.docker] image example verbatim in the scaffold")
+
+	cfg, err := config.Parse([]byte(uncommented), "scaffold")
+	require.NoError(t, err, "uncommenting the docker image example must produce a valid config")
+	require.NotNil(t, cfg.Sandbox.Docker)
+	assert.NotEmpty(t, cfg.Sandbox.Docker.Image)
+	assert.NotEmpty(t, cfg.Sandbox.AllowedDomains,
+		"allowed_domains must stay under [sandbox], not be swallowed into [sandbox.docker]")
 }
 
 // TestSetup_CreatesNewSandbox verifies the happy path: config exists, no sandbox yet → create + attach.

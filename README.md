@@ -72,6 +72,8 @@ Commit `.sbxgo/config.toml`. Everyone on the team uses the same settings.
 
 If your sandbox needs custom tooling, add `[sandbox.docker]` to `.sbxgo/config.toml`. Pick exactly one source:
 
+> **Keep `[sandbox.docker]` at the end of the file.** In TOML, every key after a `[table]` header belongs to that table, so placing this section above plain `[sandbox]` keys (`allowed_domains`, `kits`, …) would pull them into `[sandbox.docker]` — sbxgo rejects such configs with an error pointing at the misplaced keys.
+
 **Build from a Dockerfile in your repo:**
 
 ```toml
@@ -242,6 +244,11 @@ The template written to `.sbxgo/config.toml` by `sbxgo setup` is [config.toml.tm
 | `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |
 | `kits` | | | Kit references applied at sandbox creation. Content changes count as drift and prompt a recreate on the next `sbxgo run`. |
 | `extra_workspaces` | | | Extra host paths to mount into the sandbox |
+
+Unrecognized keys are an error: a typo (`allowd_domains`) or a key swallowed by a mispositioned
+`[sandbox.docker]` header fails `sbxgo run`/`sbxgo setup` with a message naming the key, instead of
+being silently ignored. Configs still carrying the removed `branch` field get a migration hint
+toward `clone`.
 
 ### Network policy
 

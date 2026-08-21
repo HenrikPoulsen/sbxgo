@@ -116,3 +116,8 @@ All errors use `github.com/rotisserie/eris`. Use `eris.New`/`eris.Errorf` for ne
 | `denied_domains` | | | Sandbox-scoped deny rules. Always wins over allow. |
 | `kits` | | | Kit references applied at `sbx create` only. Content changes are tracked by the drift hash and prompt a recreate on the next `sbxgo run`. Marked experimental upstream as of sbx 0.31.0. |
 | `extra_workspaces` | | | Extra host paths to mount into the sandbox |
+
+Parsing is strict: unrecognized keys are an error (`config.checkUnknownKeys`), with targeted hints
+for keys swallowed by a mispositioned `[sandbox.docker]` header, a missing `[sandbox]` header, and
+the removed `branch` field (→ `clone`). Keep `[sandbox.docker]` examples at the end of any config —
+in TOML, every key after a table header joins that table.
